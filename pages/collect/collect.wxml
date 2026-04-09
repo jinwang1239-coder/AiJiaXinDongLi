@@ -1,27 +1,23 @@
-<!--pages/collect/collect.wxml-->
-<navigation-bar title="业务信息收集" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+<!-- pages/collect/collect.wxml -->
+<navigation-bar title="信息采集" back="{{false}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y type="list">
   <view class="collect-container">
-    
-    <!-- 快速录入按钮 -->
     <view class="quick-input-section">
       <button class="btn btn-secondary quick-input-btn" bindtap="showQuickInput">
-        📋 快速录入
+        快速录入
       </button>
     </view>
 
-    <!-- 表单区域 -->
     <view class="card form-card">
       <view class="card-header">
         <view class="card-title">业务信息表单</view>
         <view wx:if="{{estimatedCommission > 0}}" class="commission-preview">
-          预计酬金：<text class="commission-amount">¥{{estimatedCommission}}</text>
+          预计酬金：<text class="commission-amount">￥{{estimatedCommission}}</text>
         </view>
       </view>
 
       <form>
-        <!-- 日期 -->
         <view class="form-group">
           <label class="form-label">业务日期 *</label>
           <picker mode="date" value="{{formData.date}}" bindchange="onDateChange">
@@ -32,7 +28,6 @@
           </picker>
         </view>
 
-        <!-- 区县 -->
         <view class="form-group">
           <label class="form-label">区县 *</label>
           <picker range="{{districts}}" bindchange="onDistrictChange">
@@ -41,11 +36,11 @@
               <text wx:else class="placeholder">请选择区县</text>
             </view>
           </picker>
-        </view>        <!-- 业务名称 - 三级联动选择 -->
+        </view>
+
         <view class="form-group cascade-selector">
           <label class="form-label">业务名称 *</label>
-          
-          <!-- 业务分类 -->
+
           <view class="cascade-item {{selectedCategory ? 'active' : ''}}">
             <picker range="{{categories}}" range-key="name" value="{{categoryIndex}}" bindchange="onCategoryChange">
               <view class="form-picker">
@@ -55,7 +50,6 @@
             </picker>
           </view>
 
-          <!-- 业务子分类 -->
           <view class="cascade-item {{selectedSubcategory ? 'active' : ''}}" wx:if="{{subcategories.length > 0}}">
             <picker range="{{subcategories}}" range-key="name" value="{{subcategoryIndex}}" bindchange="onSubcategoryChange">
               <view class="form-picker">
@@ -65,40 +59,36 @@
             </picker>
           </view>
 
-          <!-- 具体产品 -->
           <view class="cascade-item {{selectedProduct ? 'active' : ''}}" wx:if="{{products.length > 0}}">
             <picker range="{{products}}" range-key="name" value="{{productIndex}}" bindchange="onProductChange">
               <view class="form-picker">
                 <text wx:if="{{selectedProduct}}">{{selectedProduct}}</text>
-                <text wx:else class="placeholder">请选择具体产品</text>
+                <text wx:else class="placeholder">请选择具体业务</text>
               </view>
             </picker>
           </view>
 
-          <!-- 手动输入业务名称 -->
-          <view class="manual-input-section" wx:if="{{!formData.businessName || formData.businessName === ''}}">
+          <view class="manual-input-section" wx:if="{{!formData.businessName}}">
             <view class="form-label">或手动输入业务名称</view>
-            <input 
-              class="form-input" 
+            <input
+              class="form-input"
               placeholder="手动输入业务名称"
               value="{{formData.businessName}}"
               data-field="businessName"
               bindinput="onInputChange"
             />
           </view>
-          
-          <!-- 显示已选择的业务名称 -->
+
           <view wx:if="{{formData.businessName}}" class="selected-business" style="margin-top: 20rpx; padding: 15rpx; background: #f0f7ff; border-radius: 8rpx; border-left: 4rpx solid #667eea;">
             <text style="font-size: 26rpx; color: #666;">已选择：</text>
             <text style="font-size: 28rpx; color: #333; font-weight: 500;">{{formData.businessName}}</text>
           </view>
         </view>
 
-        <!-- 用户号码 -->
         <view class="form-group">
           <label class="form-label">用户号码 *</label>
-          <input 
-            class="form-input" 
+          <input
+            class="form-input"
             type="number"
             maxlength="11"
             placeholder="请输入11位手机号码"
@@ -108,11 +98,10 @@
           />
         </view>
 
-        <!-- 发展人员 -->
         <view class="form-group">
           <label class="form-label">发展人员 *</label>
-          <input 
-            class="form-input" 
+          <input
+            class="form-input"
             placeholder="请输入发展人员姓名"
             value="{{formData.developer}}"
             data-field="developer"
@@ -120,14 +109,13 @@
           />
         </view>
 
-        <!-- 业务截图 -->
         <view class="form-group">
           <label class="form-label">业务办理截图（选填）</label>
           <view class="image-upload-container">
             <view class="image-list">
-              <view 
-                wx:for="{{formData.attachments}}" 
-                wx:key="index" 
+              <view
+                wx:for="{{formData.attachments}}"
+                wx:key="index"
                 class="image-item"
                 data-index="{{index}}"
                 bindtap="previewImage"
@@ -137,23 +125,22 @@
                   <text>×</text>
                 </view>
               </view>
-              
+
               <view wx:if="{{formData.attachments.length < 5}}" class="image-upload-btn" bindtap="chooseImage">
                 <view class="upload-icon">+</view>
                 <view class="upload-text">添加图片</view>
               </view>
             </view>
-            <view class="upload-tips">最多可上传5张图片，支持相机拍照和相册选择</view>
+            <view class="upload-tips">最多可上传5张图片，支持相册和相机选择。</view>
           </view>
         </view>
       </form>
     </view>
 
-    <!-- 操作按钮 -->
     <view class="action-buttons">
       <button class="btn btn-secondary reset-btn" bindtap="onReset">重置表单</button>
-      <button 
-        class="btn btn-primary submit-btn" 
+      <button
+        class="btn btn-primary submit-btn"
         bindtap="onSubmit"
         loading="{{submitting}}"
         disabled="{{submitting}}"
@@ -165,20 +152,19 @@
   </view>
 </scroll-view>
 
-<!-- 快速录入弹窗 -->
 <view wx:if="{{showQuickInput}}" class="modal-overlay" bindtap="hideQuickInput">
   <view class="modal-container" catchtap="true">
     <view class="modal-header">
       <view class="modal-title">快速录入</view>
       <view class="modal-close" bindtap="hideQuickInput">×</view>
     </view>
-    
+
     <view class="modal-content">
       <view class="quick-input-tips">
-        请按照以下格式粘贴或输入信息：
+        请按以下格式粘贴或输入信息：
       </view>
-      
-      <textarea 
+
+      <textarea
         class="quick-input-textarea"
         placeholder="{{quickInputTemplate}}"
         value="{{quickInputText}}"
@@ -186,7 +172,7 @@
         auto-height
         maxlength="500"
       ></textarea>
-      
+
       <view class="modal-actions">
         <button class="btn btn-secondary" bindtap="hideQuickInput">取消</button>
         <button class="btn btn-primary" bindtap="parseQuickInput">解析并填充</button>

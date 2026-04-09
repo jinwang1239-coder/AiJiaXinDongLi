@@ -27,9 +27,8 @@ function calculateStats(records) {
   records.forEach(record => {
     if (!record) return
     
-    const recordDate = parseRecordDate(record.createTime || record.timestamp || record.date)
+    const recordDate = new Date(record.createTime || record.timestamp || record.date)
     const commission = parseFloat(record.commission || record.amount || 0)
-    if (!recordDate) return
     
     // 总计
     stats.totalRecords++
@@ -54,39 +53,6 @@ function calculateStats(records) {
   stats.monthCommission = Math.round(stats.monthCommission * 100) / 100
   
   return stats
-}
-
-function parseRecordDate(value) {
-  if (!value) return null
-  
-  if (value instanceof Date) {
-    return isNaN(value.getTime()) ? null : value
-  }
-  
-  if (typeof value === 'number') {
-    const date = new Date(value)
-    return isNaN(date.getTime()) ? null : date
-  }
-  
-  if (typeof value === 'string') {
-    const normalized = value.includes(' ') ? value.replace(' ', 'T') : value
-    const date = new Date(normalized)
-    return isNaN(date.getTime()) ? null : date
-  }
-  
-  if (typeof value === 'object') {
-    if (typeof value.toDate === 'function') {
-      const date = value.toDate()
-      return isNaN(date.getTime()) ? null : date
-    }
-    
-    if (typeof value.seconds === 'number') {
-      const date = new Date(value.seconds * 1000)
-      return isNaN(date.getTime()) ? null : date
-    }
-  }
-  
-  return null
 }
 
 /**
