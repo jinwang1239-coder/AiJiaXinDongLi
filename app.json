@@ -1,0 +1,37 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/collect/collect",
+    "pages/manage/manage",
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTextStyle": "black",
+    "navigationStyle": "custom",
+    "backgroundTextStyle": "light",
+    "backgroundColor": "#f8f8f8"
+  },
+  "tabBar": {
+    "color": "#666666",
+    "selectedColor": "#667eea",
+    "borderStyle": "black",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/login/login",
+        "text": "\u767b\u5f55"
+      },
+      {
+        "pagePath": "pages/collect/collect",
+        "text": "\u4fe1\u606f\u91c7\u96c6"
+      },
+      {
+        "pagePath": "pages/manage/manage",
+        "text": "\u6570\u636e\u7ba1\u7406"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

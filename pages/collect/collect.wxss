@@ -1,0 +1,340 @@
+/* pages/collect/collect.wxss */
+page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f8f8;
+}
+
+.page-container {
+  flex: 1;
+  overflow-y: hidden;
+}
+
+.collect-container {
+  padding: 20rpx 30rpx 40rpx;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* 快速录入区域 */
+.quick-input-section {
+  margin-bottom: 30rpx;
+  text-align: center;
+}
+
+.quick-input-btn {
+  padding: 20rpx 40rpx;
+  font-size: 28rpx;
+  border-radius: 25rpx;
+}
+
+/* 表单卡片 */
+.form-card {
+  margin-bottom: 40rpx;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.commission-preview {
+  font-size: 26rpx;
+  color: #666;
+}
+
+.commission-amount {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #667eea;
+}
+
+/* 表单组 */
+.form-group {
+  margin-bottom: 35rpx;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 15rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-input, .form-picker {
+  width: 100%;
+  padding: 25rpx;
+  border: 2rpx solid #e6e6e6;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  background: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.3s ease;
+  min-height: 48rpx;
+  display: flex; 
+  align-items: center;
+}
+
+.form-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 4rpx rgba(102, 126, 234, 0.1);
+}
+
+.form-picker {
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.form-picker::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 12rpx solid transparent;
+  border-right: 12rpx solid transparent;
+  border-top: 12rpx solid #999;
+  margin-left: 10rpx;
+}
+
+/* 三级联动选择器样式 */
+.cascade-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.cascade-item {
+  width: 100%;
+}
+
+.cascade-item .form-picker {
+  background: #fff;
+  border: 2rpx solid #e6e6e6;
+}
+
+.cascade-item.active .form-picker {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.05);
+}
+
+/* 手动输入区域 */
+.manual-input-section {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid #f0f0f0;
+}
+
+.manual-input-section .form-label {
+  font-size: 26rpx;
+  color: #666;
+}
+
+/* 确保所有输入框完全可见 */
+.form-input {
+  word-wrap: break-word;
+  overflow: visible;
+  white-space: normal;
+}
+
+/* 修复长文本显示问题 */
+.form-picker text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.placeholder {
+  color: #999;
+}
+
+/* 图片上传 */
+.image-upload-container {
+  margin-top: 15rpx;
+}
+
+.image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+  margin-bottom: 15rpx;
+}
+
+.image-item {
+  position: relative;
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.uploaded-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 8rpx;
+}
+
+.image-delete {
+  position: absolute;
+  top: -10rpx;
+  right: -10rpx;
+  width: 40rpx;
+  height: 40rpx;
+  background: #ff4d4f;
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  font-weight: bold;
+  box-shadow: 0 2rpx 8rpx rgba(255, 77, 79, 0.3);
+}
+
+.image-upload-btn {
+  width: 150rpx;
+  height: 150rpx;
+  border: 3rpx dashed #d9d9d9;
+  border-radius: 8rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+  transition: all 0.3s ease;
+}
+
+.image-upload-btn:active {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.upload-icon {
+  font-size: 40rpx;
+  color: #999;
+  margin-bottom: 8rpx;
+}
+
+.upload-text {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.upload-tips {
+  font-size: 24rpx;
+  color: #999;
+  line-height: 1.5;
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  gap: 30rpx;
+  padding: 0 20rpx;
+  margin-bottom: 40rpx;
+}
+
+.reset-btn, .submit-btn {
+  flex: 1;
+  height: 80rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 40rpx;
+}
+
+/* 快速录入弹窗 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 40rpx;
+  box-sizing: border-box;
+}
+
+.modal-container {
+  width: 100%;
+  max-width: 600rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+  background: #f8f9ff;
+}
+
+.modal-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-close {
+  width: 50rpx;
+  height: 50rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  color: #999;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.modal-content {
+  padding: 30rpx;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.quick-input-tips {
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 20rpx;
+  line-height: 1.5;
+}
+
+.quick-input-textarea {
+  width: 100%;
+  min-height: 300rpx;
+  padding: 20rpx;
+  border: 2rpx solid #e6e6e6;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  background: #fff;
+  box-sizing: border-box;
+  margin-bottom: 30rpx;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 20rpx;
+}
+
+.modal-actions .btn {
+  flex: 1;
+  height: 70rpx;
+  font-size: 28rpx;
+  border-radius: 35rpx;
+}

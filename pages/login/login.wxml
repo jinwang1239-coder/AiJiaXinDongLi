@@ -1,0 +1,124 @@
+<!--pages/login/login.wxml-->
+<navigation-bar title="业务收集系统" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y type="list">
+  <view class="login-container">
+    
+    <!-- 未登录状态 -->
+    <view wx:if="{{!hasUserInfo}}" class="login-section">
+      <view class="login-header">
+        <!-- <image class="app-logo" src="/images/logo.png" mode="aspectFit"></image> -->
+        <!-- <view class="app-title">业务信息收集管理系统</view> -->
+        <view class="app-subtitle">便捷的业务信息收集和酬金管理平台</view>
+      </view>
+      
+      <view class="login-actions">
+        <button 
+          class="btn btn-primary login-btn" 
+          bindtap="onLogin"
+          loading="{{loading}}"
+        >
+          <text wx:if="{{!loading}}">微信授权登录</text>
+          <text wx:else>登录中...</text>
+        </button>
+        
+        <view class="login-tips">
+          <text>登录后可享受以下服务：</text>
+          <view class="tips-list">
+            <view class="tip-item">📊 业务数据统计</view>
+            <view class="tip-item">💰 酬金计算管理</view>
+            <view class="tip-item">📱 移动端便捷录入</view>
+            <view class="tip-item">📈 数据导出分析</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 已登录状态 -->
+    <view wx:else class="user-section">
+      
+      <!-- 用户信息卡片 -->
+      <view class="card user-info-card">
+        <view class="user-header">
+          <image class="user-avatar" src="{{userInfo.avatarUrl}}" mode="aspectFill"></image>
+          <view class="user-details">
+            <view class="user-name">{{userInfo.nickName}}</view>
+            <view class="user-role">
+              <text class="tag tag-primary">{{roleText}}</text>
+            </view>
+          </view>
+          <button class="btn-logout" bindtap="onLogout">退出</button>
+        </view>
+      </view>
+
+      <!-- 统计数据卡片 -->
+      <view class="card stats-card">
+        <view class="card-header">
+          <view class="card-title">业务统计</view>
+          <button class="btn-detail" bindtap="viewDetailStats">详情</button>
+        </view>
+        
+        <view class="stats-grid">
+          <view class="stats-item">
+            <view class="stats-number">{{stats.todayRecords}}</view>
+            <view class="stats-label">今日业务</view>
+          </view>
+          <view class="stats-item">
+            <view class="stats-number">¥{{stats.todayCommission}}</view>
+            <view class="stats-label">今日酬金</view>
+          </view>
+          <view class="stats-item">
+            <view class="stats-number">{{stats.monthRecords}}</view>
+            <view class="stats-label">本月业务</view>
+          </view>
+          <view class="stats-item">
+            <view class="stats-number">¥{{stats.monthCommission}}</view>
+            <view class="stats-label">本月酬金</view>
+          </view>
+        </view>
+        
+        <view class="stats-summary">
+          <view class="summary-item">
+            <text class="summary-label">累计业务量：</text>
+            <text class="summary-value">{{stats.totalRecords}} 笔</text>
+          </view>
+          <view class="summary-item">
+            <text class="summary-label">累计酬金：</text>
+            <text class="summary-value highlight">¥{{stats.totalCommission}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 快捷操作 -->
+      <view class="card actions-card">
+        <view class="card-title">快捷操作</view>
+        <view class="action-buttons">
+          <button class="btn btn-success action-btn" bindtap="goToCollect">
+            <view class="btn-icon">📝</view>
+            <view class="btn-text">录入业务</view>
+          </button>
+          <button class="btn btn-warning action-btn" bindtap="goToManage">
+            <view class="btn-icon">📊</view>
+            <view class="btn-text">数据管理</view>
+          </button>
+        </view>
+      </view>
+
+      <!-- 权限说明 -->
+      <view class="card permission-card">
+        <view class="card-title">权限说明</view>
+        <view class="permission-content">
+          <view wx:if="{{userRole === 'sales_person'}}" class="permission-text">
+            <text>🔍 您可以查看和导出个人的业务量及酬金信息</text>
+          </view>
+          <view wx:elif="{{userRole === 'district_manager'}}" class="permission-text">
+            <text>🏢 您可以查看和导出所管辖区县的业务量及酬金信息</text>
+          </view>
+          <view wx:elif="{{userRole === 'sales_department'}}" class="permission-text">
+            <text>🌐 您可以查看和导出全部业务量及酬金信息</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</scroll-view>

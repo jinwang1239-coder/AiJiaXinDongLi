@@ -1,0 +1,538 @@
+/* pages/manage/manage.wxss */
+
+.page-container {
+  height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.manage-container {
+  padding: 20rpx;
+  min-height: 100vh;
+}
+
+/* 统计卡片 */
+.stats-overview {
+  margin-bottom: 30rpx;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30rpx;
+}
+
+.stats-period {
+  font-size: 24rpx;
+  color: #999;
+  background: #f5f5f5;
+  padding: 8rpx 16rpx;
+  border-radius: 12rpx;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30rpx;
+}
+
+.stats-item {
+  text-align: center;
+  padding: 20rpx;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 12rpx;
+  color: white;
+}
+
+.stats-number {
+  font-size: 48rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+  text-shadow: 0 2rpx 4rpx rgba(0,0,0,0.2);
+}
+
+.stats-label {
+  font-size: 24rpx;
+  opacity: 0.9;
+}
+
+/* 工具栏 */
+.toolbar {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 30rpx;
+}
+
+.filter-btn, .export-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  height: 88rpx;
+}
+
+.btn-icon {
+  font-size: 32rpx;
+}
+
+/* 筛选面板 */
+.filter-panel {
+  margin-bottom: 30rpx;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.filter-actions {
+  display: flex;
+  gap: 20rpx;
+}
+
+.filter-action-btn {
+  font-size: 24rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 8rpx;
+  background: #f0f0f0;
+  border: none;
+}
+
+.filter-form {
+  display: grid;
+  gap: 30rpx;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20rpx;
+}
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.date-separator {
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* 数据列表 */
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.record-item {
+  background: white;
+  border-radius: 16rpx;
+  overflow: hidden;
+  box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+}
+
+.record-item:active {
+  transform: scale(0.98);
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.15);
+}
+
+.record-header {
+  padding: 30rpx;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.record-title {
+  flex: 1;
+}
+
+.business-name {
+  font-size: 32rpx;
+  font-weight: bold;
+  margin-bottom: 10rpx;
+}
+
+.business-type {
+  font-size: 24rpx;
+  opacity: 0.9;
+  background: rgba(255,255,255,0.2);
+  padding: 6rpx 12rpx;
+  border-radius: 8rpx;
+  display: inline-block;
+}
+
+.record-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
+}
+
+.status-badge {
+  font-size: 22rpx;
+  padding: 8rpx 16rpx;
+  border-radius: 12rpx;
+  background: rgba(255,255,255,0.9);
+  color: #333;
+  font-weight: 500;
+}
+
+.status-pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-approved {
+  background: #d1edff;
+  color: #0c5460;
+}
+
+.status-rejected {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.commission-amount {
+  font-size: 28rpx;
+  font-weight: bold;
+  background: rgba(255,255,255,0.2);
+  padding: 8rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.record-body {
+  padding: 30rpx;
+}
+
+.record-info {
+  display: grid;
+  gap: 20rpx;
+  margin-bottom: 30rpx;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.info-label {
+  font-size: 28rpx;
+  color: #666;
+  font-weight: 500;
+}
+
+.info-value {
+  font-size: 28rpx;
+  color: #333;
+  text-align: right;
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.contact-info {
+  color: #2196F3;
+}
+
+.record-images {
+  margin-bottom: 30rpx;
+}
+
+.images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200rpx, 1fr));
+  gap: 20rpx;
+}
+
+.record-image {
+  width: 100%;
+  height: 150rpx;
+  border-radius: 12rpx;
+  object-fit: cover;
+  background: #f5f5f5;
+}
+
+.record-actions {
+  display: flex;
+  gap: 20rpx;
+  border-top: 1rpx solid #eee;
+  padding-top: 30rpx;
+}
+
+.action-btn {
+  flex: 1;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  border: none;
+}
+
+.btn-view {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.btn-edit {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.btn-delete {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 100rpx 40rpx;
+  color: #999;
+}
+
+.empty-icon {
+  font-size: 120rpx;
+  margin-bottom: 30rpx;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  margin-bottom: 40rpx;
+}
+
+/* 加载状态 */
+.loading-container {
+  padding: 40rpx;
+  text-align: center;
+}
+
+.loading-text {
+  font-size: 28rpx;
+  color: #999;
+  margin-top: 20rpx;
+}
+
+/* 角色权限标识 */
+.role-indicator {
+  position: fixed;
+  top: 120rpx;
+  right: 20rpx;
+  background: rgba(255,255,255,0.9);
+  padding: 12rpx 20rpx;
+  border-radius: 20rpx;
+  font-size: 22rpx;
+  color: #666;
+  z-index: 100;
+  backdrop-filter: blur(10rpx);
+}
+
+/* 响应式设计 */
+@media (max-width: 500rpx) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 20rpx;
+  }
+  
+  .filter-row {
+    grid-template-columns: 1fr;
+  }
+  
+  .record-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20rpx;
+  }
+  
+  .record-status {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+  
+  .images-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 动画效果 */
+.record-item {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 筛选标签 */
+.filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  margin-bottom: 30rpx;
+}
+
+.filter-tag {
+  background: rgba(255,255,255,0.9);
+  color: #666;
+  padding: 12rpx 20rpx;
+  border-radius: 20rpx;
+  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.filter-tag-close {
+  font-size: 20rpx;
+  opacity: 0.7;
+}
+
+/* 数据导出进度 */
+.export-progress {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 40rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  z-index: 1000;
+}
+
+.export-progress-text {
+  font-size: 28rpx;
+  margin-bottom: 20rpx;
+}
+
+.export-progress-bar {
+  width: 300rpx;
+  height: 8rpx;
+  background: rgba(255,255,255,0.3);
+  border-radius: 4rpx;
+  overflow: hidden;
+}
+
+.export-progress-fill {
+  height: 100%;
+  background: #4CAF50;
+  transition: width 0.3s ease;
+}
+
+/* 导出格式选择弹窗 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-container {
+  background: white;
+  border-radius: 20rpx;
+  width: 600rpx;
+  max-width: 90vw;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 30rpx 40rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.modal-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-close {
+  font-size: 40rpx;
+  color: #999;
+  padding: 10rpx;
+  line-height: 1;
+}
+
+.modal-content {
+  padding: 40rpx;
+}
+
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  padding: 30rpx 20rpx;
+  border: 2rpx solid #f0f0f0;
+  border-radius: 16rpx;
+  transition: all 0.3s ease;
+}
+
+.export-option:active {
+  background: rgba(25, 137, 250, 0.1);
+  border-color: #1989fa;
+}
+
+.option-icon {
+  font-size: 40rpx;
+  margin-right: 20rpx;
+}
+
+.option-info {
+  flex: 1;
+}
+
+.option-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.option-desc {
+  font-size: 24rpx;
+  color: #666;
+  line-height: 1.4;
+}
+
+.option-arrow {
+  font-size: 24rpx;
+  color: #999;
+}
