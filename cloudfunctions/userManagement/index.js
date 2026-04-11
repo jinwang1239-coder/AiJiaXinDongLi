@@ -1,17 +1,15 @@
-// 云函数入口文件
 const cloud = require('wx-server-sdk')
 
-// 初始化 cloud
 cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV // 使用当前云环境
+  env: cloud.DYNAMIC_CURRENT_ENV
 })
 
 const db = cloud.database()
 
-// 云函数入口函数
-exports.main = async (event, context) => {
+exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
   const { action, data } = event
+
   try {
     switch (action) {
       case 'login':
@@ -39,127 +37,157 @@ exports.main = async (event, context) => {
   }
 }
 
-// 用户登录
 async function login(wxContext, data) {
   const { userInfo } = data
   const openid = wxContext.OPENID
-  
-  // 查询用户是否已存在
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
+  const userQuery = await db.collection('users').where({ openid }).get()
+
   let user
   if (userQuery.data.length === 0) {
-    // 新用户，创建记录
+    const newUser = {
+      openid,
+      nickName: userInfo.nickName,
+      avatarUrl: userInfo.avatarUrl,
+      role: 'sales_person',
+      status: 'active',
+      district: '',
+      gridName: '',
+      realName: '',
+      gridAccount: '',
+      profileCompleted: false,
+      profileCompletedTime: null,
+      createTime: new Date(),
+      updateTime: new Date()
+    }
+
     const createResult = await db.collection('users').add({
-      data: {
-        openid: openid,
-        ...userInfo,
-        role: 'sales_person', // 默认角色
-        status: 'active',
-        createTime: new Date(),
-        updateTime: new Date()
-      }
+      data: newUser
     })
-    
+
     user = {
       _id: createResult._id,
-      openid: openid,
-      ...userInfo,
-      role: 'sales_person',
-      status: 'active'
+      ...newUser
     }
   } else {
-    // 更新用户信息
-    user = userQuery.data[0]
-    await db.collection('users').doc(user._id).update({
+    const currentUser = userQuery.data[0]
+    await db.collection('users').doc(currentUser._id).update({
       data: {
-        ...userInfo,
+        nickName: userInfo.nickName,
+        avatarUrl: userInfo.avatarUrl,
         updateTime: new Date()
       }
     })
-    
-    user = { ...user, ...userInfo }
+
+    user = normalizeUser({
+      ...currentUser,
+      nickName: userInfo.nickName,
+      avatarUrl: userInfo.avatarUrl
+    })
   }
-  
+
   return {
     success: true,
     data: {
-      user: user,
+      user: normalizeUser(user),
       isNewUser: userQuery.data.length === 0
     }
   }
 }
 
-// 更新用户资料
 async function updateProfile(wxContext, data) {
   const openid = wxContext.OPENID
-  
-  const result = await db.collection('users').where({
-    openid: openid
-  }).update({
+  const userQuery = await db.collection('users').where({ openid }).get()
+
+  if (userQuery.data.length === 0) {
+    return {
+      success: false,
+      error: '用户不存在'
+    }
+  }
+
+  const currentUser = userQuery.data[0]
+  const profileData = {
+    realName: (data.realName || '').trim(),
+    gridAccount: (data.gridAccount || '').trim(),
+    district: (data.district || '').trim(),
+    gridName: (data.gridName || '').trim()
+  }
+  const profileCompleted = !!(
+    profileData.realName &&
+    profileData.gridAccount &&
+    profileData.district &&
+    profileData.gridName
+  )
+
+  await db.collection('users').doc(currentUser._id).update({
     data: {
-      ...data,
+      ...profileData,
+      profileCompleted,
+      profileCompletedTime: profileCompleted
+        ? currentUser.profileCompletedTime || new Date()
+        : null,
       updateTime: new Date()
     }
   })
-  
+
+  const refreshed = await db.collection('users').doc(currentUser._id).get()
+
   return {
     success: true,
-    data: result
+    data: normalizeUser(refreshed.data)
   }
 }
 
-// 获取用户信息
 async function getUserInfo(wxContext) {
   const openid = wxContext.OPENID
-  
-  const result = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
+  const result = await db.collection('users').where({ openid }).get()
+
   if (result.data.length === 0) {
     return {
       success: false,
       error: '用户不存在'
     }
   }
-  
+
   return {
     success: true,
-    data: result.data[0]
+    data: normalizeUser(result.data[0])
   }
 }
 
-// 根据角色获取用户列表（仅管理员权限）
 async function getUsersByRole(wxContext, data) {
   const openid = wxContext.OPENID
   const { role } = data
-  
-  // 验证权限
-  const currentUser = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
+  const currentUser = await db.collection('users').where({ openid }).get()
+
   if (currentUser.data.length === 0 || !['district_manager', 'sales_department'].includes(currentUser.data[0].role)) {
     return {
       success: false,
       error: '权限不足'
     }
   }
-  
-  const query = db.collection('users')
+
+  let query = db.collection('users')
   if (role) {
-    query.where({
-      role: role
-    })
+    query = query.where({ role })
   }
-  
+
   const result = await query.get()
-  
   return {
     success: true,
-    data: result.data
+    data: result.data.map(normalizeUser)
   }
 }
+
+function normalizeUser(user) {
+  return {
+    ...user,
+    district: user.district || '',
+    gridName: user.gridName || '',
+    realName: user.realName || '',
+    gridAccount: user.gridAccount || '',
+    profileCompleted: !!user.profileCompleted,
+    profileCompletedTime: user.profileCompletedTime || null
+  }
+}
+

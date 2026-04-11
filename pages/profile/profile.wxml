@@ -1,0 +1,43 @@
+<navigation-bar title="个人信息" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y type="list">
+  <view class="profile-page">
+    <view class="card profile-summary">
+      <image class="avatar" src="{{profileForm.avatarUrl}}" mode="aspectFill"></image>
+      <view class="summary-content">
+        <view class="nickname">{{profileForm.nickName}}</view>
+        <view class="role-tag">{{roleText}}</view>
+      </view>
+    </view>
+
+    <view class="card form-card">
+      <view class="section-title">个人资料</view>
+
+      <view class="form-group">
+        <view class="form-label">姓名</view>
+        <input class="form-input" placeholder="请输入姓名" value="{{profileForm.realName}}" data-field="realName" bindinput="onInputChange" />
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">网格通账号</view>
+        <input class="form-input" placeholder="请输入网格通账号" value="{{profileForm.gridAccount}}" data-field="gridAccount" bindinput="onInputChange" />
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">区县</view>
+        <picker range="{{districts}}" bindchange="onDistrictChange">
+          <view class="picker-field {{profileForm.district ? '' : 'placeholder'}}">{{profileForm.district || '请选择区县'}}</view>
+        </picker>
+      </view>
+
+      <view class="form-group">
+        <view class="form-label">所属网格</view>
+        <picker range="{{grids}}" bindchange="onGridChange" disabled="{{!profileForm.district}}">
+          <view class="picker-field {{profileForm.gridName ? '' : 'placeholder'}}">{{profileForm.gridName || '请选择所属网格'}}</view>
+        </picker>
+      </view>
+
+      <button class="save-btn" bindtap="onSave" loading="{{saving}}">保存修改</button>
+    </view>
+  </view>
+</scroll-view>

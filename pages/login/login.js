@@ -1,6 +1,6 @@
-// pages/login/login.js
 const auth = require('../../utils/auth')
 const commission = require('../../utils/commission')
+const gridOptions = require('../../utils/grid-options')
 
 Page({
   data: {
@@ -8,215 +8,318 @@ Page({
     hasUserInfo: false,
     userRole: null,
     roleText: '',
+    profileCompleted: false,
+    showProfileModal: false,
+    monthLabel: '',
+    profileDisplayName: '未命名用户',
+    profileSubtitle: '请先补充所属网格信息',
+    districts: gridOptions.getDistricts(),
+    grids: [],
+    profileForm: {
+      realName: '',
+      gridAccount: '',
+      district: '',
+      gridName: ''
+    },
     stats: {
       totalRecords: 0,
-      totalCommission: 0,
+      totalCommission: '0.00',
       todayRecords: 0,
-      todayCommission: 0,
+      todayCommission: '0.00',
       monthRecords: 0,
-      monthCommission: 0
+      monthCommission: '0.00'
     },
-    loading: false
+    loading: false,
+    savingProfile: false
   },
 
   onLoad() {
+    this.setMonthLabel()
     this.checkLoginStatus()
   },
 
   onShow() {
-    if (this.data.hasUserInfo) {
+    this.setMonthLabel()
+    this.checkLoginStatus()
+    if (this.data.hasUserInfo && this.data.profileCompleted) {
       this.loadUserStats()
     }
   },
 
-  /**
-   * 检查登录状态
-   */
+  setMonthLabel() {
+    const now = new Date()
+    const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    this.setData({ monthLabel })
+  },
+
   checkLoginStatus() {
     const app = getApp()
-    if (app.globalData.hasUserInfo) {
-      this.setData({
-        userInfo: app.globalData.userInfo,
-        hasUserInfo: true,
-        userRole: app.globalData.userRole
-      })
-      this.updateRoleText()
-      this.loadUserStats()
+    if (!app.globalData.hasUserInfo) {
+      return
     }
+
+    const user = app.globalData.userProfile || {
+      ...app.globalData.userInfo,
+      role: app.globalData.userRole,
+      profileCompleted: app.globalData.profileCompleted
+    }
+
+    this.setUserState(user)
   },
 
-  /**
-   * 微信授权登录
-   */
-  async onLogin() {
-    try {
-      this.setData({ loading: true })
-      
-      const result = await auth.login()
-      
-      this.setData({
-        userInfo: result.userInfo,
-        hasUserInfo: true,
-        userRole: result.userRole.role,
-        loading: false
-      })
-      // 同步 userRole 到全局
-      const app = getApp();
-      app.globalData.userRole = result.userRole.role;
-      
-      this.updateRoleText()
-      this.loadUserStats()
-      
-      wx.showToast({
-        title: '登录成功',
-        icon: 'success'
-      })
-    } catch (error) {
-      console.error('登录失败：', error)
-      this.setData({ loading: false })
-      wx.showToast({
-        title: '登录失败',
-        icon: 'error'
-      })
-    }
-  },
+  setUserState(user) {
+    const completed = !!user.profileCompleted
+    const profileForm = this.buildProfileForm(user)
 
-  /**
-   * 更新角色文本
-   */
-  updateRoleText() {
-    const roleMap = {
-      'sales_person': '销售师傅',
-      'district_manager': '区县主管',
-      'sales_department': '销售业务部'
-    }
     this.setData({
-      roleText: roleMap[this.data.userRole] || '未知角色'
+      userInfo: {
+        nickName: user.nickName || '',
+        avatarUrl: user.avatarUrl || ''
+      },
+      hasUserInfo: true,
+      userRole: user.role || null,
+      profileCompleted: completed,
+      showProfileModal: !completed,
+      profileForm,
+      grids: gridOptions.getGridsByDistrict(profileForm.district),
+      profileDisplayName: profileForm.realName || user.nickName || '未命名用户',
+      profileSubtitle: this.buildProfileSubtitle(profileForm)
+    })
+    this.updateRoleText(user.role)
+  },
+
+  buildProfileForm(user) {
+    return {
+      realName: user.realName || '',
+      gridAccount: user.gridAccount || '',
+      district: user.district || '',
+      gridName: user.gridName || ''
+    }
+  },
+
+  buildProfileSubtitle(profileForm) {
+    const { district, gridName } = profileForm
+    if (district && gridName) {
+      return `${district} -> ${gridName}`
+    }
+    return district || gridName || '请先补充所属网格信息'
+  },
+
+  updateRoleText(role) {
+    const roleMap = {
+      sales_person: '销售师傅',
+      district_manager: '区县主管',
+      sales_department: '销售业务部'
+    }
+
+    this.setData({
+      roleText: roleMap[role] || '未知角色'
     })
   },
 
-  /**
-   * 加载用户统计数据
-   */
+  formatMoney(value) {
+    return Number(value || 0).toFixed(2)
+  },
+
+  async onLogin() {
+    try {
+      this.setData({ loading: true })
+      const result = await auth.login()
+      this.setUserState(result.userRole)
+
+      if (result.userRole.profileCompleted) {
+        this.loadUserStats()
+        wx.showToast({ title: '登录成功', icon: 'success' })
+      } else {
+        wx.showToast({ title: '请补充个人信息', icon: 'none' })
+      }
+    } catch (error) {
+      console.error('登录失败:', error)
+      wx.showToast({ title: '登录失败', icon: 'error' })
+    } finally {
+      this.setData({ loading: false })
+    }
+  },
+
+  openProfileModal() {
+    if (!this.data.hasUserInfo) {
+      wx.showToast({ title: '请先登录', icon: 'none' })
+      return
+    }
+
+    this.setData({ showProfileModal: true })
+  },
+
+  closeProfileModal() {
+    if (!this.data.profileCompleted) {
+      wx.showToast({ title: '请先完成个人信息填写', icon: 'none' })
+      return
+    }
+
+    this.setData({ showProfileModal: false })
+  },
+
+  stopModalPropagation() {},
+
+  onProfileInputChange(e) {
+    const { field } = e.currentTarget.dataset
+    const profileForm = {
+      ...this.data.profileForm,
+      [field]: e.detail.value
+    }
+
+    this.setData({
+      profileForm,
+      profileDisplayName: profileForm.realName || (this.data.userInfo && this.data.userInfo.nickName) || '未命名用户'
+    })
+  },
+
+  onDistrictChange(e) {
+    const district = this.data.districts[Number(e.detail.value)] || ''
+    const grids = gridOptions.getGridsByDistrict(district)
+    const profileForm = {
+      ...this.data.profileForm,
+      district,
+      gridName: ''
+    }
+
+    this.setData({
+      grids,
+      profileForm,
+      profileSubtitle: this.buildProfileSubtitle(profileForm)
+    })
+  },
+
+  onGridChange(e) {
+    const gridName = this.data.grids[Number(e.detail.value)] || ''
+    const profileForm = {
+      ...this.data.profileForm,
+      gridName
+    }
+
+    this.setData({
+      profileForm,
+      profileSubtitle: this.buildProfileSubtitle(profileForm)
+    })
+  },
+
+  validateProfileForm() {
+    const { realName, gridAccount, district, gridName } = this.data.profileForm
+
+    if (!realName.trim()) {
+      wx.showToast({ title: '请输入姓名', icon: 'none' })
+      return false
+    }
+
+    if (!gridAccount.trim()) {
+      wx.showToast({ title: '请输入网格通账号', icon: 'none' })
+      return false
+    }
+
+    if (!district) {
+      wx.showToast({ title: '请选择区县', icon: 'none' })
+      return false
+    }
+
+    if (!gridName) {
+      wx.showToast({ title: '请选择所属网格', icon: 'none' })
+      return false
+    }
+
+    return true
+  },
+
+  async submitProfile() {
+    if (!this.validateProfileForm()) {
+      return
+    }
+
+    try {
+      this.setData({ savingProfile: true })
+      const user = await auth.updateProfile(this.data.profileForm)
+      this.setUserState(user)
+      this.setData({ showProfileModal: false })
+      this.loadUserStats()
+      wx.showToast({ title: '资料已保存', icon: 'success' })
+    } catch (error) {
+      console.error('保存个人信息失败:', error)
+      wx.showToast({ title: '保存失败', icon: 'error' })
+    } finally {
+      this.setData({ savingProfile: false })
+    }
+  },
+
   async loadUserStats() {
     try {
       const app = getApp()
       const db = wx.cloud.database()
       let query = db.collection('business_records')
 
-      // 根据用户角色查询数据
       if (this.data.userRole === 'sales_person') {
-        // 销售师傅只能看自己的数据
-        const openid = app.globalData.openid
-        query = query.where({
-          userId: openid
-        })      } else if (this.data.userRole === 'district_manager') {
-        // 区县主管看所属区县数据
+        query = query.where({ userId: app.globalData.openid })
+      } else if (this.data.userRole === 'district_manager') {
         const userInfo = await auth.getUserRole()
         if (userInfo && userInfo.district) {
-          query = query.where({
-            district: userInfo.district
-          })
+          query = query.where({ district: userInfo.district })
         }
       }
-      // 销售业务部可以看全部数据，不需要额外条件
 
       const res = await query.get()
-      const records = res.data
-      const stats = commission.calculateStats(records)
-
-      this.setData({ stats })
+      const stats = commission.calculateStats(res.data)
+      this.setData({
+        stats: {
+          totalRecords: stats.totalRecords,
+          totalCommission: this.formatMoney(stats.totalCommission),
+          todayRecords: stats.todayRecords,
+          todayCommission: this.formatMoney(stats.todayCommission),
+          monthRecords: stats.monthRecords,
+          monthCommission: this.formatMoney(stats.monthCommission)
+        }
+      })
     } catch (error) {
-      console.error('加载统计数据失败：', error)
+      console.error('加载统计数据失败:', error)
     }
   },
 
-  /**
-   * 退出登录
-   */
   onLogout() {
     wx.showModal({
       title: '确认退出',
       content: '确定要退出登录吗？',
-      success: (res) => {
-        if (res.confirm) {
-          const app = getApp()
-          app.globalData.userInfo = null
-          app.globalData.hasUserInfo = false
-          app.globalData.userRole = null
-          
-          this.setData({
-            userInfo: null,
-            hasUserInfo: false,
-            userRole: null,
-            roleText: '',
-            stats: {
-              totalRecords: 0,
-              totalCommission: 0,
-              todayRecords: 0,
-              todayCommission: 0,
-              monthRecords: 0,
-              monthCommission: 0
-            }
-          })
-          
-          wx.showToast({
-            title: '已退出登录',
-            icon: 'success'
-          })
+      success: res => {
+        if (!res.confirm) {
+          return
         }
+
+        const app = getApp()
+        app.setUserProfile(null)
+        this.setData({
+          userInfo: null,
+          hasUserInfo: false,
+          userRole: null,
+          roleText: '',
+          profileCompleted: false,
+          showProfileModal: false,
+          profileDisplayName: '未命名用户',
+          profileSubtitle: '请先补充所属网格信息',
+          grids: [],
+          profileForm: {
+            realName: '',
+            gridAccount: '',
+            district: '',
+            gridName: ''
+          },
+          stats: {
+            totalRecords: 0,
+            totalCommission: '0.00',
+            todayRecords: 0,
+            todayCommission: '0.00',
+            monthRecords: 0,
+            monthCommission: '0.00'
+          }
+        })
+
+        wx.showToast({ title: '已退出登录', icon: 'success' })
       }
-    })
-  },
-
-  /**
-   * 跳转到信息收集页面
-   */
-  goToCollect() {
-    if (!this.data.hasUserInfo) {
-      wx.showToast({
-        title: '请先登录',
-        icon: 'error'
-      })
-      return
-    }
-    wx.switchTab({
-      url: '/pages/collect/collect'
-    })
-  },
-
-  /**
-   * 跳转到数据管理页面
-   */
-  goToManage() {
-    if (!this.data.hasUserInfo) {
-      wx.showToast({
-        title: '请先登录',
-        icon: 'error'
-      })
-      return
-    }
-    wx.switchTab({
-      url: '/pages/manage/manage'
-    })
-  },
-
-  /**
-   * 查看个人详细统计
-   */
-  viewDetailStats() {
-    if (!this.data.hasUserInfo) {
-      wx.showToast({
-        title: '请先登录',
-        icon: 'error'
-      })
-      return
-    }
-    
-    // 这里可以跳转到详细统计页面
-    wx.showToast({
-      title: '功能开发中',
-      icon: 'none'
     })
   }
 })

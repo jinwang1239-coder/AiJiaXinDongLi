@@ -3,6 +3,7 @@
     "pages/login/login",
     "pages/collect/collect",
     "pages/manage/manage",
+    "pages/profile/profile",
     "pages/index/index"
   ],
   "window": {
@@ -19,15 +20,15 @@
     "list": [
       {
         "pagePath": "pages/login/login",
-        "text": "\u767b\u5f55"
+        "text": "鐧诲綍"
       },
       {
         "pagePath": "pages/collect/collect",
-        "text": "\u4fe1\u606f\u91c7\u96c6"
+        "text": "淇℃伅閲囬泦"
       },
       {
         "pagePath": "pages/manage/manage",
-        "text": "\u6570\u636e\u7ba1\u7406"
+        "text": "鏁版嵁绠＄悊"
       }
     ]
   },

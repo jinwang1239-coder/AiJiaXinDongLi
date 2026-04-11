@@ -123,6 +123,21 @@ Page({
       })
       return false
     }
+
+    if (!app.globalData.profileCompleted) {
+      wx.showModal({
+        title: '请先完善个人信息',
+        content: '首次登录后需先补充姓名、网格通账号和所属网格。',
+        showCancel: false,
+        success: () => {
+          wx.switchTab({
+            url: '/pages/login/login'
+          })
+        }
+      })
+      return false
+    }
+
     return true
   },
 
