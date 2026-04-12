@@ -19,46 +19,20 @@ Page({
     }
   },
 
-  onLoad() {
-    this.loadProfile()
-  },
-
   onShow() {
     this.loadProfile()
   },
 
   async loadProfile() {
-    const app = getApp()
-    if (!app.globalData.hasUserInfo) {
-      wx.showToast({
-        title: '请先登录',
-        icon: 'none'
-      })
-      setTimeout(() => {
-        wx.switchTab({
-          url: '/pages/login/login'
-        })
-      }, 300)
-      return
-    }
-
     try {
       this.setData({ loading: true })
-      const user = await auth.getCurrentUserInfo()
-      const district = user.district || ''
-      this.setData({
-        grids: gridOptions.getGridsByDistrict(district),
-        profileForm: {
-          nickName: user.nickName || '',
-          avatarUrl: user.avatarUrl || '',
-          role: user.role || '',
-          realName: user.realName || '',
-          gridAccount: user.gridAccount || '',
-          district,
-          gridName: user.gridName || ''
-        }
-      })
-      this.updateRoleText(user.role)
+      const user = await auth.ensureLoggedIn()
+      if (!user) {
+        this.redirectToLogin()
+        return
+      }
+
+      this.setProfileState(user)
     } catch (error) {
       console.error('加载个人信息失败:', error)
       wx.showToast({
@@ -68,6 +42,46 @@ Page({
     } finally {
       this.setData({ loading: false })
     }
+  },
+
+  redirectToLogin() {
+    wx.showToast({
+      title: '请先登录',
+      icon: 'none'
+    })
+    setTimeout(() => {
+      wx.switchTab({
+        url: '/pages/login/login'
+      })
+    }, 300)
+  },
+
+  backToLogin() {
+    if (getCurrentPages().length > 1) {
+      wx.navigateBack({ delta: 1 })
+      return
+    }
+
+    wx.switchTab({
+      url: '/pages/login/login'
+    })
+  },
+
+  setProfileState(user) {
+    const district = user.district || ''
+    this.setData({
+      grids: gridOptions.getGridsByDistrict(district),
+      profileForm: {
+        nickName: user.nickName || '',
+        avatarUrl: user.avatarUrl || '',
+        role: user.role || '',
+        realName: user.realName || '',
+        gridAccount: user.gridAccount || '',
+        district,
+        gridName: user.gridName || ''
+      }
+    })
+    this.updateRoleText(user.role)
   },
 
   updateRoleText(role) {
@@ -138,16 +152,20 @@ Page({
 
     try {
       this.setData({ saving: true })
-      await auth.updateProfile({
+      const user = await auth.updateProfile({
         realName: this.data.profileForm.realName,
         gridAccount: this.data.profileForm.gridAccount,
         district: this.data.profileForm.district,
         gridName: this.data.profileForm.gridName
       })
+      this.setProfileState(user)
       wx.showToast({
         title: '保存成功',
         icon: 'success'
       })
+      setTimeout(() => {
+        this.backToLogin()
+      }, 500)
     } catch (error) {
       console.error('保存个人信息失败:', error)
       wx.showToast({

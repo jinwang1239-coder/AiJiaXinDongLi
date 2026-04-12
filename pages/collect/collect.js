@@ -1,4 +1,5 @@
 // pages/collect/collect.js
+const auth = require('../../utils/auth')
 const commission = require('../../utils/commission-fixed')
 const productConfig = require('../../utils/product-config')
 const storage = require('../../utils/storage')
@@ -62,8 +63,8 @@ Page({
     this.initData()
   },
 
-  onShow() {
-    if (this.checkLoginStatus()) {
+  async onShow() {
+    if (await this.checkLoginStatus()) {
       this.loadLastFormData()
     }
   },
@@ -144,33 +145,23 @@ Page({
     })
   },
 
-  checkLoginStatus() {
-    const app = getApp()
-    if (!app.globalData.hasUserInfo) {
-      wx.showModal({
-        title: '请先登录',
-        content: '使用该功能前需要先登录。',
-        showCancel: false,
-        success: () => {
-          wx.switchTab({
-            url: '/pages/login/login'
-          })
-        }
-      })
-      return false
-    }
+  showLoginRequiredModal() {
+    wx.showModal({
+      title: '请先登录',
+      content: '使用该功能前需要先登录。',
+      showCancel: false,
+      success: () => {
+        wx.switchTab({
+          url: '/pages/login/login'
+        })
+      }
+    })
+  },
 
-    if (!app.globalData.profileCompleted) {
-      wx.showModal({
-        title: '请先完善个人信息',
-        content: '首次登录后需先补充姓名、网格通账号和所属网格。',
-        showCancel: false,
-        success: () => {
-          wx.switchTab({
-            url: '/pages/login/login'
-          })
-        }
-      })
+  async checkLoginStatus() {
+    const user = await auth.ensureLoggedIn()
+    if (!user) {
+      this.showLoginRequiredModal()
       return false
     }
 
@@ -545,8 +536,13 @@ Page({
     })
 
     try {
-      const app = getApp()
-      const openid = app.globalData.openid
+      const user = await auth.ensureLoggedIn()
+      if (!user) {
+        this.showLoginRequiredModal()
+        return
+      }
+
+      const openid = user.openid
 
       storage.saveLastFormData(this.data.formData)
 

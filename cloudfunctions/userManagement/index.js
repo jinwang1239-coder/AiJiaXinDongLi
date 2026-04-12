@@ -70,19 +70,31 @@ async function login(wxContext, data) {
     }
   } else {
     const currentUser = userQuery.data[0]
-    await db.collection('users').doc(currentUser._id).update({
-      data: {
-        nickName: userInfo.nickName,
-        avatarUrl: userInfo.avatarUrl,
-        updateTime: new Date()
-      }
-    })
-
-    user = normalizeUser({
+    const now = new Date()
+    const normalizedUser = normalizeUser({
       ...currentUser,
       nickName: userInfo.nickName,
       avatarUrl: userInfo.avatarUrl
     })
+    const updateData = {
+      nickName: userInfo.nickName,
+      avatarUrl: userInfo.avatarUrl,
+      updateTime: now
+    }
+
+    if (normalizedUser.profileCompleted && !currentUser.profileCompleted) {
+      updateData.profileCompleted = true
+      updateData.profileCompletedTime = currentUser.profileCompletedTime || now
+    }
+
+    await db.collection('users').doc(currentUser._id).update({
+      data: updateData
+    })
+
+    user = {
+      ...currentUser,
+      ...updateData
+    }
   }
 
   return {
@@ -94,47 +106,81 @@ async function login(wxContext, data) {
   }
 }
 
-async function updateProfile(wxContext, data) {
+async function updateProfile(wxContext, data = {}) {
   const openid = wxContext.OPENID
-  const userQuery = await db.collection('users').where({ openid }).get()
-
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-
-  const currentUser = userQuery.data[0]
   const profileData = {
     realName: (data.realName || '').trim(),
     gridAccount: (data.gridAccount || '').trim(),
     district: (data.district || '').trim(),
     gridName: (data.gridName || '').trim()
   }
-  const profileCompleted = !!(
-    profileData.realName &&
-    profileData.gridAccount &&
-    profileData.district &&
-    profileData.gridName
-  )
+  const profileCompleted = isProfileCompleted(profileData)
 
-  await db.collection('users').doc(currentUser._id).update({
-    data: {
-      ...profileData,
-      profileCompleted,
-      profileCompletedTime: profileCompleted
-        ? currentUser.profileCompletedTime || new Date()
-        : null,
-      updateTime: new Date()
+  if (!profileCompleted) {
+    return {
+      success: false,
+      error: '请完整填写姓名、网格通账号、区县和所属网格'
     }
+  }
+
+  const userQuery = await db.collection('users').where({ openid }).get()
+  const now = new Date()
+
+  if (userQuery.data.length === 0) {
+    const newUser = {
+      openid,
+      nickName: '',
+      avatarUrl: '',
+      role: 'sales_person',
+      status: 'active',
+      ...profileData,
+      profileCompleted: true,
+      profileCompletedTime: now,
+      createTime: now,
+      updateTime: now
+    }
+
+    const createResult = await db.collection('users').add({
+      data: newUser
+    })
+
+    return {
+      success: true,
+      data: normalizeUser({
+        _id: createResult._id,
+        ...newUser
+      })
+    }
+  }
+
+  const currentUser = userQuery.data[0]
+  const updateData = {
+    ...profileData,
+    profileCompleted: true,
+    profileCompletedTime: currentUser.profileCompletedTime || now,
+    updateTime: now
+  }
+
+  const updateResult = await db.collection('users').doc(currentUser._id).update({
+    data: updateData
   })
 
-  const refreshed = await db.collection('users').doc(currentUser._id).get()
+  const updatedCount = updateResult && (
+    updateResult.updated !== undefined
+      ? updateResult.updated
+      : updateResult.stats && updateResult.stats.updated
+  )
+
+  if (updatedCount === 0) {
+    throw new Error('个人信息保存失败，请稍后重试')
+  }
 
   return {
     success: true,
-    data: normalizeUser(refreshed.data)
+    data: normalizeUser({
+      ...currentUser,
+      ...updateData
+    })
   }
 }
 
@@ -180,14 +226,25 @@ async function getUsersByRole(wxContext, data) {
 }
 
 function normalizeUser(user) {
+  const profileCompleted = !!user.profileCompleted || isProfileCompleted(user)
+
   return {
     ...user,
     district: user.district || '',
     gridName: user.gridName || '',
     realName: user.realName || '',
     gridAccount: user.gridAccount || '',
-    profileCompleted: !!user.profileCompleted,
+    profileCompleted,
     profileCompletedTime: user.profileCompletedTime || null
   }
+}
+
+function isProfileCompleted(user) {
+  return !!(
+    (user.realName || '').trim() &&
+    (user.gridAccount || '').trim() &&
+    (user.district || '').trim() &&
+    (user.gridName || '').trim()
+  )
 }
 

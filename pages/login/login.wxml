@@ -31,11 +31,10 @@
         <view class="user-content">
           <view class="user-line">姓名：{{profileDisplayName}}</view>
           <view class="user-subtitle">{{profileSubtitle}}</view>
-          <view class="user-meta">{{roleText}}</view>
         </view>
         <view class="user-tools">
-          <button class="tool-btn" bindtap="openProfileModal">编辑</button>
-          <button class="tool-btn tool-btn-ghost" bindtap="onLogout">退出</button>
+          <button class="tool-btn" bindtap="openProfileModal">编辑个人信息</button>
+          <button class="tool-btn tool-btn-ghost" bindtap="onLogout">退出登录</button>
         </view>
       </view>
 

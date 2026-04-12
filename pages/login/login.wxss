@@ -94,6 +94,7 @@ page {
 .user-card {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 20rpx;
   padding: 26rpx 24rpx;
 }
@@ -125,22 +126,21 @@ page {
   word-break: break-all;
 }
 
-.user-meta {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: #8c99aa;
-}
-
 .user-tools {
   display: flex;
-  flex-direction: column;
-  gap: 12rpx;
+  width: 100%;
+  gap: 16rpx;
+  margin-top: 8rpx;
 }
 
 .tool-btn {
+  flex: 1;
   min-width: 112rpx;
-  height: 60rpx;
-  line-height: 60rpx;
+  height: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18rpx;
   border-radius: 30rpx;
   font-size: 24rpx;
   background: #1f8df3;

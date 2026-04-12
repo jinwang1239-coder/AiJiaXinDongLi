@@ -1,4 +1,5 @@
 // pages/manage/manage.js
+const auth = require('../../utils/auth')
 const exportUtil = require('../../utils/export')
 const commission = require('../../utils/commission')
 
@@ -52,11 +53,6 @@ Page({
   },
 
   onShow() {
-    const app = getApp();
-    this.setData({
-      userRole: app.getUserRole()
-    });
-    this.checkLoginStatus();
     this.loadData();
   },
 
@@ -108,35 +104,30 @@ Page({
   /**
    * 检查登录状态
    */
-  checkLoginStatus() {
-    const app = getApp()
-    if (!app.globalData.hasUserInfo) {
-      wx.showModal({
-        title: '请先登录',
-        content: '使用此功能需要先登录',
-        showCancel: false,
-        success: () => {
-          wx.switchTab({
-            url: '/pages/login/login'
-          })
-        }
-      })
+  showLoginRequiredModal() {
+    wx.showModal({
+      title: '请先登录',
+      content: '使用此功能需要先登录',
+      showCancel: false,
+      success: () => {
+        wx.switchTab({
+          url: '/pages/login/login'
+        })
+      }
+    })
+  },
+
+  async checkLoginStatus() {
+    const user = await auth.ensureLoggedIn()
+    if (!user) {
+      this.showLoginRequiredModal()
       return false
     }
 
-    if (!app.globalData.profileCompleted) {
-      wx.showModal({
-        title: '请先完善个人信息',
-        content: '首次登录后需先补充姓名、网格通账号和所属网格。',
-        showCancel: false,
-        success: () => {
-          wx.switchTab({
-            url: '/pages/login/login'
-          })
-        }
-      })
-      return false
-    }
+    this.setData({
+      userRole: user.role || null,
+      userDistrict: user.district || ''
+    })
 
     return true
   },
@@ -145,7 +136,7 @@ Page({
    * 加载数据
    */
   async loadData(reset = true) {
-    if (!this.checkLoginStatus()) {
+    if (!(await this.checkLoginStatus())) {
       return
     }
 
@@ -228,19 +219,7 @@ Page({
    * 获取用户信息
    */
   async getUserInfo() {
-    const app = getApp()
-    const db = wx.cloud.database()
-    
-    try {
-      const res = await db.collection('users').where({
-        openid: app.globalData.openid
-      }).get()
-      
-      return res.data.length > 0 ? res.data[0] : null
-    } catch (error) {
-      console.error('获取用户信息失败：', error)
-      return null
-    }
+    return auth.ensureLoggedIn()
   },
 
   /**

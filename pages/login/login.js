@@ -35,13 +35,12 @@ Page({
 
   onLoad() {
     this.setMonthLabel()
-    this.checkLoginStatus()
   },
 
-  onShow() {
+  async onShow() {
     this.setMonthLabel()
-    this.checkLoginStatus()
-    if (this.data.hasUserInfo && this.data.profileCompleted) {
+    const user = await this.checkLoginStatus()
+    if (user && user.profileCompleted) {
       this.loadUserStats()
     }
   },
@@ -52,24 +51,25 @@ Page({
     this.setData({ monthLabel })
   },
 
-  checkLoginStatus() {
-    const app = getApp()
-    if (!app.globalData.hasUserInfo) {
-      return
-    }
-
-    const user = app.globalData.userProfile || {
-      ...app.globalData.userInfo,
-      role: app.globalData.userRole,
-      profileCompleted: app.globalData.profileCompleted
+  async checkLoginStatus() {
+    const user = await auth.ensureLoggedIn()
+    if (!user) {
+      this.resetUserState()
+      return null
     }
 
     this.setUserState(user)
+    return user
   },
 
   setUserState(user) {
-    const completed = !!user.profileCompleted
     const profileForm = this.buildProfileForm(user)
+    const completed = !!user.profileCompleted || !!(
+      profileForm.realName.trim() &&
+      profileForm.gridAccount.trim() &&
+      profileForm.district.trim() &&
+      profileForm.gridName.trim()
+    )
 
     this.setData({
       userInfo: {
@@ -144,6 +144,13 @@ Page({
   openProfileModal() {
     if (!this.data.hasUserInfo) {
       wx.showToast({ title: '请先登录', icon: 'none' })
+      return
+    }
+
+    if (this.data.profileCompleted) {
+      wx.navigateTo({
+        url: '/pages/profile/profile'
+      })
       return
     }
 
@@ -281,6 +288,38 @@ Page({
     }
   },
 
+  getDefaultStats() {
+    return {
+      totalRecords: 0,
+      totalCommission: '0.00',
+      todayRecords: 0,
+      todayCommission: '0.00',
+      monthRecords: 0,
+      monthCommission: '0.00'
+    }
+  },
+
+  resetUserState() {
+    this.setData({
+      userInfo: null,
+      hasUserInfo: false,
+      userRole: null,
+      roleText: '',
+      profileCompleted: false,
+      showProfileModal: false,
+      profileDisplayName: '未命名用户',
+      profileSubtitle: '请先补充所属网格信息',
+      grids: [],
+      profileForm: {
+        realName: '',
+        gridAccount: '',
+        district: '',
+        gridName: ''
+      },
+      stats: this.getDefaultStats()
+    })
+  },
+
   onLogout() {
     wx.showModal({
       title: '确认退出',
@@ -290,33 +329,8 @@ Page({
           return
         }
 
-        const app = getApp()
-        app.setUserProfile(null)
-        this.setData({
-          userInfo: null,
-          hasUserInfo: false,
-          userRole: null,
-          roleText: '',
-          profileCompleted: false,
-          showProfileModal: false,
-          profileDisplayName: '未命名用户',
-          profileSubtitle: '请先补充所属网格信息',
-          grids: [],
-          profileForm: {
-            realName: '',
-            gridAccount: '',
-            district: '',
-            gridName: ''
-          },
-          stats: {
-            totalRecords: 0,
-            totalCommission: '0.00',
-            todayRecords: 0,
-            todayCommission: '0.00',
-            monthRecords: 0,
-            monthCommission: '0.00'
-          }
-        })
+        auth.logout()
+        this.resetUserState()
 
         wx.showToast({ title: '已退出登录', icon: 'success' })
       }

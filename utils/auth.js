@@ -1,6 +1,29 @@
+const LOGIN_STATE_KEY = 'xdlLoginState'
+
+function setStoredLoginState(isLoggedIn) {
+  try {
+    wx.setStorageSync(LOGIN_STATE_KEY, !!isLoggedIn)
+  } catch (error) {
+    console.error('保存登录状态失败:', error)
+  }
+}
+
+function getStoredLoginState() {
+  try {
+    return wx.getStorageSync(LOGIN_STATE_KEY) === true
+  } catch (error) {
+    console.error('读取登录状态失败:', error)
+    return false
+  }
+}
+
 function syncUserToApp(user) {
   const app = getApp()
   app.setUserProfile(user)
+
+  if (user) {
+    setStoredLoginState(true)
+  }
 }
 
 function getUserProfile() {
@@ -64,6 +87,43 @@ function getUserRole() {
   })
 }
 
+function getCachedUser() {
+  const app = getApp()
+  if (!app.globalData.hasUserInfo || !app.globalData.openid) {
+    return null
+  }
+
+  return app.globalData.userProfile || {
+    ...app.globalData.userInfo,
+    openid: app.globalData.openid,
+    role: app.globalData.userRole,
+    profileCompleted: app.globalData.profileCompleted
+  }
+}
+
+function ensureLoggedIn() {
+  const cachedUser = getCachedUser()
+  if (cachedUser) {
+    return Promise.resolve(cachedUser)
+  }
+
+  if (!getStoredLoginState()) {
+    return Promise.resolve(null)
+  }
+
+  return getCurrentUserInfo().catch(err => {
+    console.error('恢复登录状态失败:', err)
+    logout()
+    return null
+  })
+}
+
+function logout() {
+  const app = getApp()
+  app.setUserProfile(null)
+  setStoredLoginState(false)
+}
+
 function login() {
   return new Promise((resolve, reject) => {
     wx.showLoading({
@@ -110,5 +170,7 @@ module.exports = {
   getUserRole,
   getCurrentUserInfo,
   updateProfile,
+  ensureLoggedIn,
+  logout,
   login
 }

@@ -64,6 +64,13 @@ App({
       return
     }
 
+    const profileCompleted = !!user.profileCompleted || !!(
+      (user.realName || '').trim() &&
+      (user.gridAccount || '').trim() &&
+      (user.district || '').trim() &&
+      (user.gridName || '').trim()
+    )
+
     this.globalData.userInfo = {
       nickName: user.nickName || '',
       avatarUrl: user.avatarUrl || ''
@@ -71,7 +78,10 @@ App({
     this.globalData.userRole = user.role || null
     this.globalData.hasUserInfo = true
     this.globalData.openid = user.openid || ''
-    this.globalData.profileCompleted = !!user.profileCompleted
-    this.globalData.userProfile = user
+    this.globalData.profileCompleted = profileCompleted
+    this.globalData.userProfile = {
+      ...user,
+      profileCompleted
+    }
   }
 })
