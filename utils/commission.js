@@ -27,7 +27,7 @@ function calculateStats(records) {
   records.forEach(record => {
     if (!record) return
     
-    const recordDate = new Date(record.createTime || record.timestamp || record.date)
+    const recordDate = new Date(record.date || record.businessDate || record.handleTime || record.createTime || record.timestamp)
     const commission = parseFloat(record.commission || record.amount || 0)
     
     // 总计

@@ -123,6 +123,18 @@ async function updateProfile(wxContext, data = {}) {
     }
   }
 
+  const duplicateAccountQuery = await db.collection('users').where({
+    gridAccount: profileData.gridAccount
+  }).limit(2).get()
+  const duplicateAccount = duplicateAccountQuery.data.find(user => user.openid !== openid)
+
+  if (duplicateAccount) {
+    return {
+      success: false,
+      error: '该网格通账号已被其他用户使用'
+    }
+  }
+
   const userQuery = await db.collection('users').where({ openid }).get()
   const now = new Date()
 

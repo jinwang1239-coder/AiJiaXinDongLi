@@ -153,6 +153,7 @@ function getExportColumns(userRole) {
   const baseColumns = [
     { field: 'date', title: '业务日期' },
     { field: 'district', title: '区县' },
+    { field: 'gridAccount', title: '网格通账号' },
     { field: 'businessName', title: '业务名称' },
     { field: 'userPhone', title: '用户号码' },
     { field: 'developer', title: '发展人员' },
@@ -176,7 +177,7 @@ function getExportColumns(userRole) {
  * @param {string} userDistrict - 用户区县
  * @returns {Array} 过滤后的数据
  */
-function filterDataByRole(data, userRole, userId, userDistrict) {
+function filterDataByRole(data, userRole, userId, userDistrict, userGridAccount = '') {
   if (!data || data.length === 0) {
     return []
   }
@@ -184,7 +185,16 @@ function filterDataByRole(data, userRole, userId, userDistrict) {
   switch (userRole) {
     case 'sales_person':
       // 销售师傅只能看自己的数据
-      return data.filter(item => item.userId === userId)
+      return data.filter(item => {
+        const ownerOpenid = item.owner && item.owner.openid
+        const ownerGridAccount = item.owner && item.owner.gridAccount
+        return (userGridAccount && (
+          item.gridAccount === userGridAccount ||
+          item.developerGridAccount === userGridAccount ||
+          item.developer === userGridAccount ||
+          ownerGridAccount === userGridAccount
+        )) || item.userId === userId || ownerOpenid === userId
+      })
     
     case 'district_manager':
       // 区县主管可以看所属区县的数据
@@ -245,7 +255,7 @@ function checkExportPermission(userRole) {
  * @param {string} format - 导出格式 'csv' 或 'xlsx'
  * @returns {Promise} 导出结果
  */
-function exportBusinessData(userRole, userId, userDistrict, filters = {}, format = 'xlsx') {
+function exportBusinessData(userRole, userId, userDistrict, filters = {}, format = 'xlsx', userGridAccount = '') {
   return new Promise((resolve, reject) => {
     // 检查权限
     if (!checkExportPermission(userRole)) {
@@ -311,35 +321,16 @@ function exportBusinessData(userRole, userId, userDistrict, filters = {}, format
         reject(err)
       })
     } else {
-      // CSV格式导出（保持原有逻辑）
-      const db = wx.cloud.database()
-      let query = db.collection('business_records')
-      
-      // 根据角色添加查询条件
-      switch (userRole) {
-        case 'sales_person':
-          query = query.where({
-            userId: userId,
-            ...filters
-          })
-          break
-        case 'district_manager':
-          query = query.where({
-            district: userDistrict,
-            ...filters
-          })
-          break
-        case 'sales_department':
-          if (Object.keys(filters).length > 0) {
-            query = query.where(filters)
-          }
-          break
-      }
-      
-      query.orderBy('createTime', 'desc')
-        .get()
-        .then(res => {
-          const data = res.data
+      wx.cloud.callFunction({
+        name: 'businessData',
+        data: {
+          action: 'export',
+          filters: filters,
+          format: 'json'
+        }
+      }).then(res => {
+        if (res.result && res.result.success) {
+          const data = (res.result.data && res.result.data.records) || []
           const columns = getExportColumns(userRole)
           const filename = generateFilename(userRole, userDistrict)
           
@@ -353,14 +344,16 @@ function exportBusinessData(userRole, userId, userDistrict, filters = {}, format
             filename: filename,
             format: 'csv'
           })
-        })
-        .catch(err => {
-          console.error('导出失败：', err)
-          reject(err)
-        })
-        .finally(() => {
-          wx.hideLoading()
-        })
+          return
+        }
+
+        reject((res.result && res.result.error) || '导出失败')
+      }).catch(err => {
+        console.error('导出失败：', err)
+        reject(err)
+      }).finally(() => {
+        wx.hideLoading()
+      })
     }
   })
 }

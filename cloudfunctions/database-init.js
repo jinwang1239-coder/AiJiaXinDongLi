@@ -12,6 +12,12 @@ db.collection('users').createIndex({
 })
 
 db.collection('users').createIndex({
+  "gridAccount": 1
+}, {
+  "name": "grid_account_index"
+})
+
+db.collection('users').createIndex({
   "role": 1
 }, {
   "name": "role_index"
@@ -28,6 +34,48 @@ db.collection('business_records').createIndex({
   "submittedBy.openid": 1
 }, {
   "name": "submitter_openid_index"
+})
+
+db.collection('business_records').createIndex({
+  "userId": 1
+}, {
+  "name": "user_id_index"
+})
+
+db.collection('business_records').createIndex({
+  "gridAccount": 1
+}, {
+  "name": "grid_account_index"
+})
+
+db.collection('business_records').createIndex({
+  "developerGridAccount": 1
+}, {
+  "name": "developer_grid_account_index"
+})
+
+db.collection('business_records').createIndex({
+  "owner.openid": 1
+}, {
+  "name": "owner_openid_index"
+})
+
+db.collection('business_records').createIndex({
+  "owner.gridAccount": 1
+}, {
+  "name": "owner_grid_account_index"
+})
+
+db.collection('business_records').createIndex({
+  "date": -1
+}, {
+  "name": "business_date_desc"
+})
+
+db.collection('business_records').createIndex({
+  "businessName": 1
+}, {
+  "name": "business_name_index"
 })
 
 db.collection('business_records').createIndex({

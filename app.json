@@ -20,15 +20,15 @@
     "list": [
       {
         "pagePath": "pages/login/login",
-        "text": "鐧诲綍"
+        "text": "\u767B\u5F55"
       },
       {
         "pagePath": "pages/collect/collect",
-        "text": "淇℃伅閲囬泦"
+        "text": "\u4FE1\u606F\u91C7\u96C6"
       },
       {
         "pagePath": "pages/manage/manage",
-        "text": "鏁版嵁绠＄悊"
+        "text": "\u6570\u636E\u7BA1\u7406"
       }
     ]
   },

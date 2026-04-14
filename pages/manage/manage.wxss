@@ -219,6 +219,10 @@
   padding: 30rpx;
 }
 
+.record-content {
+  padding: 30rpx;
+}
+
 .record-info {
   display: grid;
   gap: 20rpx;
@@ -247,6 +251,42 @@
 
 .contact-info {
   color: #2196F3;
+}
+
+.settlement-summary {
+  padding: 20rpx;
+  margin-bottom: 24rpx;
+  border-radius: 8rpx;
+  background: #f6f9ff;
+  border: 1rpx solid #dbe6ff;
+}
+
+.settlement-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20rpx;
+  margin-bottom: 12rpx;
+}
+
+.settlement-line:last-child {
+  margin-bottom: 0;
+}
+
+.settlement-label {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #667eea;
+  font-weight: 600;
+}
+
+.settlement-value {
+  flex: 1;
+  font-size: 24rpx;
+  color: #333;
+  line-height: 1.5;
+  text-align: right;
+  word-break: break-all;
 }
 
 .record-images {

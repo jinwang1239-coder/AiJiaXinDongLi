@@ -16,7 +16,7 @@ function saveLastFormData(formData) {
     // 只保存需要预填充的字段
     const dataToSave = {
       district: formData.district,
-      developer: formData.developer,
+      gridAccount: formData.gridAccount || '',
       userPhone: formData.userPhone,
       category: formData.category,
       subcategory: formData.subcategory,

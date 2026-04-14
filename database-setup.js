@@ -16,6 +16,13 @@ db.collection('users').createIndex({
   "name": "openid_unique"
 });
 
+// 创建网格通账号索引
+db.collection('users').createIndex({
+  "gridAccount": 1
+}, {
+  "name": "grid_account_index"
+});
+
 // 创建角色索引
 db.collection('users').createIndex({
   "role": 1
@@ -40,6 +47,54 @@ db.collection('business_records').createIndex({
   "submittedBy.openid": 1
 }, {
   "name": "submitter_openid_index"
+});
+
+// 创建业务归属用户索引
+db.collection('business_records').createIndex({
+  "userId": 1
+}, {
+  "name": "user_id_index"
+});
+
+// 创建业务网格通账号索引
+db.collection('business_records').createIndex({
+  "gridAccount": 1
+}, {
+  "name": "grid_account_index"
+});
+
+// 创建发展人员网格通账号索引
+db.collection('business_records').createIndex({
+  "developerGridAccount": 1
+}, {
+  "name": "developer_grid_account_index"
+});
+
+// 创建业务归属人快照索引
+db.collection('business_records').createIndex({
+  "owner.openid": 1
+}, {
+  "name": "owner_openid_index"
+});
+
+db.collection('business_records').createIndex({
+  "owner.gridAccount": 1
+}, {
+  "name": "owner_grid_account_index"
+});
+
+// 创建办理日期索引
+db.collection('business_records').createIndex({
+  "date": -1
+}, {
+  "name": "business_date_desc"
+});
+
+// 创建业务名称索引
+db.collection('business_records').createIndex({
+  "businessName": 1
+}, {
+  "name": "business_name_index"
 });
 
 // 创建状态索引

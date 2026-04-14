@@ -28,6 +28,14 @@
           <view class="stats-number">¥{{stats.todayCommission}}</view>
           <view class="stats-label">今日酬金</view>
         </view>
+        <view class="stats-item">
+          <view class="stats-number">¥{{stats.settledCommission}}</view>
+          <view class="stats-label">已核算酬金</view>
+        </view>
+        <view class="stats-item">
+          <view class="stats-number">¥{{stats.unsettledCommission}}</view>
+          <view class="stats-label">未核算酬金</view>
+        </view>
       </view>
     </view>
 
@@ -138,7 +146,7 @@
     <view class="records-section">
       <view class="section-header">
         <view class="section-title">业务记录</view>
-        <view class="record-count">共{{businessRecords.length}}条记录</view>
+        <view class="record-count">共{{stats.totalRecords}}条记录</view>
       </view>
 
       <!-- 记录列表 -->
@@ -162,6 +170,10 @@
                 <text class="info-value">{{item.district}}</text>
               </view>
               <view class="info-row">
+                <text class="info-label">网格通：</text>
+                <text class="info-value">{{item.gridAccount}}</text>
+              </view>
+              <view class="info-row">
                 <text class="info-label">业务：</text>
                 <text class="info-value">{{item.businessName}}</text>
               </view>
@@ -172,6 +184,17 @@
               <view class="info-row">
                 <text class="info-label">发展人员：</text>
                 <text class="info-value">{{item.developer}}</text>
+              </view>
+            </view>
+
+            <view class="settlement-summary">
+              <view class="settlement-line">
+                <text class="settlement-label">已核算：</text>
+                <text class="settlement-value">{{item.settlementSummary.settledRangeText}} ¥{{item.settlementSummary.settledTotalText}}</text>
+              </view>
+              <view class="settlement-line">
+                <text class="settlement-label">未核算：</text>
+                <text class="settlement-value">{{item.settlementSummary.unsettledPeriodsText}} ¥{{item.settlementSummary.unsettledTotalText}}</text>
               </view>
             </view>
             
@@ -187,7 +210,7 @@
               </button>
               
               <button 
-                wx:if="{{userRole === 'sales_department' || (userRole === 'sales_person' && item.userId === userInfo.openid)}}"
+                wx:if="{{userRole === 'sales_department' || (userRole === 'sales_person' && (item.userId === currentOpenid || item.gridAccount === userGridAccount))}}"
                 class="action-btn delete-btn" 
                 data-index="{{index}}"
                 bindtap="deleteRecord"

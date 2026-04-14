@@ -1,5 +1,5 @@
 const auth = require('../../utils/auth')
-const commission = require('../../utils/commission')
+const commission = require('../../utils/commission-fixed')
 const gridOptions = require('../../utils/grid-options')
 
 Page({
@@ -258,33 +258,69 @@ Page({
 
   async loadUserStats() {
     try {
-      const app = getApp()
-      const db = wx.cloud.database()
-      let query = db.collection('business_records')
-
-      if (this.data.userRole === 'sales_person') {
-        query = query.where({ userId: app.globalData.openid })
-      } else if (this.data.userRole === 'district_manager') {
-        const userInfo = await auth.getUserRole()
-        if (userInfo && userInfo.district) {
-          query = query.where({ district: userInfo.district })
-        }
+      const currentUser = await auth.ensureLoggedIn()
+      if (!currentUser) {
+        return
       }
 
-      const res = await query.get()
-      const stats = commission.calculateStats(res.data)
-      this.setData({
-        stats: {
-          totalRecords: stats.totalRecords,
-          totalCommission: this.formatMoney(stats.totalCommission),
-          todayRecords: stats.todayRecords,
-          todayCommission: this.formatMoney(stats.todayCommission),
-          monthRecords: stats.monthRecords,
-          monthCommission: this.formatMoney(stats.monthCommission)
+      const res = await wx.cloud.callFunction({
+        name: 'businessData',
+        data: {
+          action: 'list',
+          data: {
+            page: 1,
+            pageSize: 100,
+            filters: {},
+            sortBy: 'createTime',
+            sortOrder: 'desc'
+          }
         }
       })
+
+      if (!res.result || !res.result.success) {
+        throw new Error((res.result && res.result.error) || '统计数据加载失败')
+      }
+
+      const resultData = res.result.data || {}
+      const stats = this.resolveUserStats(resultData.stats, resultData.records || [], resultData.total)
+      this.setData({ stats })
     } catch (error) {
       console.error('加载统计数据失败:', error)
+    }
+  },
+
+  resolveUserStats(remoteStats = {}, records = [], total = 0) {
+    const localStats = commission.calculateStats(records)
+    const stats = remoteStats && Object.keys(remoteStats).length > 0 ? { ...remoteStats } : {}
+    const totalRecords = Number(total || stats.totalRecords || localStats.totalRecords || 0)
+
+    if (localStats.totalRecords > Number(stats.totalRecords || 0)) {
+      stats.totalRecords = totalRecords || localStats.totalRecords
+    } else if (!Number(stats.totalRecords || 0) && totalRecords) {
+      stats.totalRecords = totalRecords
+    }
+
+    if (localStats.totalCommission > Number(stats.totalCommission || 0)) {
+      stats.totalCommission = localStats.totalCommission
+    }
+
+    if (localStats.todayRecords > Number(stats.todayRecords || 0)) {
+      stats.todayRecords = localStats.todayRecords
+      stats.todayCommission = localStats.todayCommission
+    }
+
+    if (localStats.monthRecords > Number(stats.monthRecords || 0)) {
+      stats.monthRecords = localStats.monthRecords
+      stats.monthCommission = localStats.monthCommission
+    }
+
+    return {
+      totalRecords: Number(stats.totalRecords || 0),
+      totalCommission: this.formatMoney(stats.totalCommission),
+      todayRecords: Number(stats.todayRecords || 0),
+      todayCommission: this.formatMoney(stats.todayCommission),
+      monthRecords: Number(stats.monthRecords || 0),
+      monthCommission: this.formatMoney(stats.monthCommission)
     }
   },
 

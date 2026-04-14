@@ -16,13 +16,7 @@ const DISTRICTS = [
   '开发区'
 ]
 
-const QUICK_INPUT_PREFIX = {
-  date: '- 日期：',
-  district: '- 区县：',
-  businessName: '- 业务名称：',
-  userPhone: '- 用户号码：',
-  developer: '- 发展人员：'
-}
+const IMPORT_TEMPLATE_HEADERS = ['办理时间', '网格通账号', '发展人员网格通', '业务名称', '业务号码']
 
 Page({
   data: {
@@ -31,7 +25,7 @@ Page({
       district: '',
       businessName: '',
       userPhone: '',
-      developer: '',
+      gridAccount: '',
       attachments: []
     },
     estimatedCommission: 0,
@@ -45,18 +39,18 @@ Page({
     subcategoryIndex: -1,
     productIndex: -1,
     districts: DISTRICTS,
+    userRole: null,
+    currentUserGridAccount: '',
+    currentUserDistrict: '',
+    canBatchImport: false,
     loading: false,
     submitting: false,
-    quickInputTemplate: [
-      '- 日期：2026年04月09日',
-      '- 区县：监利',
-      '- 业务名称：FTTR',
-      '- 用户号码：13963524198',
-      '- 发展人员：张三',
-      '- 业务办理截图（选填）'
-    ].join('\n'),
-    showQuickInput: false,
-    quickInputText: ''
+    importing: false,
+    importFile: null,
+    importResult: null,
+    importTemplateText: IMPORT_TEMPLATE_HEADERS.join('、'),
+    phonePlaceholder: '\u8bf7\u8f93\u516511\u4f4d\u624b\u673a\u53f7\u7801',
+    gridAccountPlaceholder: '\u8bf7\u8f93\u5165\u53d1\u5c55\u4eba\u5458\u7f51\u683c\u901a\u8d26\u53f7'
   },
 
   onLoad() {
@@ -101,7 +95,7 @@ Page({
       ...this.data.formData,
       district: lastData.district || this.data.formData.district,
       userPhone: lastData.userPhone || this.data.formData.userPhone,
-      developer: lastData.developer || this.data.formData.developer
+      gridAccount: lastData.gridAccount || this.data.formData.gridAccount
     }
 
     if (lastData.businessName) {
@@ -164,6 +158,23 @@ Page({
       this.showLoginRequiredModal()
       return false
     }
+
+    const nextData = {
+      userRole: user.role || null,
+      currentUserGridAccount: user.gridAccount || '',
+      currentUserDistrict: user.district || '',
+      canBatchImport: ['district_manager', 'sales_department'].includes(user.role)
+    }
+
+    if (user.gridAccount && !this.data.formData.gridAccount) {
+      nextData['formData.gridAccount'] = user.gridAccount
+    }
+
+    if (user.district && !this.data.formData.district) {
+      nextData['formData.district'] = user.district
+    }
+
+    this.setData(nextData)
 
     return true
   },
@@ -361,89 +372,6 @@ Page({
     })
   },
 
-  showQuickInput() {
-    this.setData({
-      showQuickInput: true,
-      quickInputText: this.data.quickInputTemplate
-    })
-  },
-
-  hideQuickInput() {
-    this.setData({
-      showQuickInput: false,
-      quickInputText: ''
-    })
-  },
-
-  onQuickInputChange(e) {
-    this.setData({
-      quickInputText: e.detail.value
-    })
-  },
-
-  parseQuickInput() {
-    const { quickInputText } = this.data
-    if (!quickInputText.trim()) {
-      wx.showToast({
-        title: '请输入内容',
-        icon: 'none'
-      })
-      return
-    }
-
-    try {
-      const lines = quickInputText.split('\n')
-      const formData = { ...this.data.formData }
-
-      lines.forEach((rawLine) => {
-        const line = rawLine.trim()
-        if (!line) {
-          return
-        }
-
-        if (line.startsWith(QUICK_INPUT_PREFIX.date)) {
-          const dateStr = line.replace(QUICK_INPUT_PREFIX.date, '').trim()
-          formData.date = this.normalizeDate(dateStr) || formData.date
-          return
-        }
-
-        if (line.startsWith(QUICK_INPUT_PREFIX.district)) {
-          formData.district = line.replace(QUICK_INPUT_PREFIX.district, '').trim()
-          return
-        }
-
-        if (line.startsWith(QUICK_INPUT_PREFIX.businessName)) {
-          formData.businessName = line.replace(QUICK_INPUT_PREFIX.businessName, '').trim()
-          return
-        }
-
-        if (line.startsWith(QUICK_INPUT_PREFIX.userPhone)) {
-          formData.userPhone = line.replace(QUICK_INPUT_PREFIX.userPhone, '').trim()
-          return
-        }
-
-        if (line.startsWith(QUICK_INPUT_PREFIX.developer)) {
-          formData.developer = line.replace(QUICK_INPUT_PREFIX.developer, '').trim()
-        }
-      })
-
-      this.setData({ formData })
-      this.calculateCommission()
-      this.hideQuickInput()
-
-      wx.showToast({
-        title: '解析成功',
-        icon: 'success'
-      })
-    } catch (error) {
-      console.error('解析快速录入失败：', error)
-      wx.showToast({
-        title: '解析失败，请检查格式',
-        icon: 'none'
-      })
-    }
-  },
-
   normalizeDate(dateStr) {
     if (!dateStr) {
       return ''
@@ -463,6 +391,132 @@ Page({
 
     const [, year, month, day] = match
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  },
+
+  chooseImportFile() {
+    if (!this.data.canBatchImport) {
+      wx.showToast({
+        title: '当前角色无导入权限',
+        icon: 'none'
+      })
+      return
+    }
+
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['xls', 'xlsx'],
+      success: (res) => {
+        const file = res.tempFiles && res.tempFiles[0]
+        if (!file) {
+          return
+        }
+
+        if (!/\.(xls|xlsx)$/i.test(file.name || '')) {
+          wx.showToast({
+            title: '请选择Excel文件',
+            icon: 'none'
+          })
+          return
+        }
+
+        this.setData({
+          importFile: file,
+          importResult: null
+        })
+      },
+      fail: (error) => {
+        if (error && error.errMsg && error.errMsg.includes('cancel')) {
+          return
+        }
+        console.error('选择Excel文件失败：', error)
+        wx.showToast({
+          title: '选择文件失败',
+          icon: 'none'
+        })
+      }
+    })
+  },
+
+  clearImportFile() {
+    this.setData({
+      importFile: null,
+      importResult: null
+    })
+  },
+
+  async onBatchImport() {
+    if (!this.data.importFile) {
+      wx.showToast({
+        title: '请先选择Excel文件',
+        icon: 'none'
+      })
+      return
+    }
+
+    const user = await auth.ensureLoggedIn()
+    if (!user) {
+      this.showLoginRequiredModal()
+      return
+    }
+
+    if (!['district_manager', 'sales_department'].includes(user.role)) {
+      wx.showToast({
+        title: '当前角色无导入权限',
+        icon: 'none'
+      })
+      return
+    }
+
+    this.setData({ importing: true })
+    wx.showLoading({
+      title: '导入中...'
+    })
+
+    try {
+      const file = this.data.importFile
+      const ext = (file.name || 'xlsx').split('.').pop()
+      const safeName = (file.name || `业务导入.${ext}`).replace(/[^\w.\-\u4e00-\u9fa5]/g, '_')
+      const uploadResult = await wx.cloud.uploadFile({
+        cloudPath: `business_imports/${Date.now()}_${safeName}`,
+        filePath: file.path
+      })
+
+      const importResponse = await wx.cloud.callFunction({
+        name: 'businessData',
+        data: {
+          action: 'batchImport',
+          data: {
+            fileID: uploadResult.fileID,
+            fileName: file.name || safeName
+          }
+        }
+      })
+
+      if (!importResponse.result || !importResponse.result.success) {
+        throw new Error((importResponse.result && importResponse.result.error) || '导入失败')
+      }
+
+      const result = importResponse.result.data
+      this.setData({
+        importResult: result,
+        importFile: null
+      })
+
+      wx.showToast({
+        title: `成功${result.successCount}条`,
+        icon: 'success'
+      })
+    } catch (error) {
+      console.error('批量导入失败：', error)
+      wx.showToast({
+        title: error.message || '导入失败',
+        icon: 'none'
+      })
+    } finally {
+      this.setData({ importing: false })
+      wx.hideLoading()
+    }
   },
 
   validateForm() {
@@ -493,8 +547,8 @@ Page({
       return false
     }
 
-    if (!formData.developer) {
-      wx.showToast({ title: '请输入发展人员', icon: 'none' })
+    if (!formData.gridAccount || !formData.gridAccount.trim()) {
+      wx.showToast({ title: '请输入发展人员网格通', icon: 'none' })
       return false
     }
 
@@ -542,28 +596,31 @@ Page({
         return
       }
 
-      const openid = user.openid
-
       storage.saveLastFormData(this.data.formData)
 
       const imageUrls = await this.uploadImages()
       const calculatedCommission = commission.calculateCommission(this.data.formData.businessName)
-      const db = wx.cloud.database()
-
-      await db.collection('business_records').add({
+      const submitResult = await wx.cloud.callFunction({
+        name: 'businessData',
         data: {
-          userId: openid,
-          date: new Date(this.data.formData.date),
-          district: this.data.formData.district,
-          businessName: this.data.formData.businessName,
-          userPhone: this.data.formData.userPhone,
-          developer: this.data.formData.developer,
-          attachments: imageUrls,
-          commission: calculatedCommission,
-          createTime: new Date(),
-          updateTime: new Date()
+          action: 'create',
+          data: {
+            date: new Date(this.data.formData.date),
+            district: this.data.formData.district,
+            gridAccount: this.data.formData.gridAccount.trim(),
+            businessName: this.data.formData.businessName,
+            userPhone: this.data.formData.userPhone,
+            businessNumber: this.data.formData.userPhone,
+            attachments: imageUrls,
+            commission: calculatedCommission,
+            source: 'form'
+          }
         }
       })
+
+      if (!submitResult.result || !submitResult.result.success) {
+        throw new Error((submitResult.result && submitResult.result.error) || '提交失败')
+      }
 
       wx.showToast({
         title: '提交成功',
@@ -587,10 +644,10 @@ Page({
     this.setData({
       formData: {
         date: this.formatDate(new Date()),
-        district: '',
+        district: this.data.currentUserDistrict || '',
         businessName: '',
         userPhone: '',
-        developer: '',
+        gridAccount: this.data.currentUserGridAccount || '',
         attachments: []
       },
       estimatedCommission: 0,
@@ -602,8 +659,7 @@ Page({
       selectedProduct: '',
       subcategories: [],
       products: [],
-      showQuickInput: false,
-      quickInputText: ''
+      importResult: this.data.importResult
     })
   },
 

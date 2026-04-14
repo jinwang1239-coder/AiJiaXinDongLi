@@ -1,12 +1,46 @@
 <!-- pages/collect/collect.wxml -->
-<navigation-bar title="信息采集" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="业务信息录入" back="{{false}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y type="list">
   <view class="collect-container">
-    <view class="quick-input-section">
-      <button class="btn btn-secondary quick-input-btn" bindtap="showQuickInput">
-        快速录入
-      </button>
+    <view wx:if="{{canBatchImport}}" class="card import-card">
+      <view class="card-header">
+        <view class="card-title">区县主管批量导入</view>
+      </view>
+
+      <view class="import-tips">
+        Excel模板字段：{{importTemplateText}}
+      </view>
+
+      <view wx:if="{{importFile}}" class="import-file">
+        <view class="import-file-name">{{importFile.name}}</view>
+        <view class="import-file-clear" bindtap="clearImportFile">移除</view>
+      </view>
+
+      <view class="import-actions">
+        <button class="btn btn-secondary import-btn" bindtap="chooseImportFile">选择Excel</button>
+        <button
+          class="btn btn-primary import-btn"
+          bindtap="onBatchImport"
+          loading="{{importing}}"
+          disabled="{{!importFile || importing}}"
+        >
+          开始导入
+        </button>
+      </view>
+
+      <view wx:if="{{importResult}}" class="import-result">
+        <view class="import-result-title">导入结果</view>
+        <view class="import-result-summary">
+          共{{importResult.total}}条，成功{{importResult.successCount}}条，失败{{importResult.failCount}}条
+        </view>
+        <view wx:if="{{importResult.failedRows && importResult.failedRows.length > 0}}" class="import-errors">
+          <view wx:for="{{importResult.failedRows}}" wx:key="rowNumber" class="import-error-item">
+            <view class="import-error-row">第{{item.rowNumber}}行：{{item.businessName || '未填写业务名称'}}</view>
+            <view wx:for="{{item.errors}}" wx:for-item="error" wx:key="*this" class="import-error-text">{{error}}</view>
+          </view>
+        </view>
+      </view>
     </view>
 
     <view class="card form-card">
@@ -68,17 +102,6 @@
             </picker>
           </view>
 
-          <view class="manual-input-section" wx:if="{{!formData.businessName}}">
-            <view class="form-label">或手动输入业务名称</view>
-            <input
-              class="form-input"
-              placeholder="手动输入业务名称"
-              value="{{formData.businessName}}"
-              data-field="businessName"
-              bindinput="onInputChange"
-            />
-          </view>
-
           <view wx:if="{{formData.businessName}}" class="selected-business" style="margin-top: 20rpx; padding: 15rpx; background: #f0f7ff; border-radius: 8rpx; border-left: 4rpx solid #667eea;">
             <text style="font-size: 26rpx; color: #666;">已选择：</text>
             <text style="font-size: 28rpx; color: #333; font-weight: 500;">{{formData.businessName}}</text>
@@ -91,7 +114,8 @@
             class="form-input"
             type="number"
             maxlength="11"
-            placeholder="请输入11位手机号码"
+            placeholder="{{phonePlaceholder}}"
+            placeholder-class="form-input-placeholder"
             value="{{formData.userPhone}}"
             data-field="userPhone"
             bindinput="onInputChange"
@@ -99,12 +123,13 @@
         </view>
 
         <view class="form-group">
-          <label class="form-label">发展人员 *</label>
+          <label class="form-label">发展人员网格通 *</label>
           <input
             class="form-input"
-            placeholder="请输入发展人员姓名"
-            value="{{formData.developer}}"
-            data-field="developer"
+            placeholder="{{gridAccountPlaceholder}}"
+            placeholder-class="form-input-placeholder"
+            value="{{formData.gridAccount}}"
+            data-field="gridAccount"
             bindinput="onInputChange"
           />
         </view>
@@ -151,32 +176,3 @@
     </view>
   </view>
 </scroll-view>
-
-<view wx:if="{{showQuickInput}}" class="modal-overlay" bindtap="hideQuickInput">
-  <view class="modal-container" catchtap="true">
-    <view class="modal-header">
-      <view class="modal-title">快速录入</view>
-      <view class="modal-close" bindtap="hideQuickInput">×</view>
-    </view>
-
-    <view class="modal-content">
-      <view class="quick-input-tips">
-        请按以下格式粘贴或输入信息：
-      </view>
-
-      <textarea
-        class="quick-input-textarea"
-        placeholder="{{quickInputTemplate}}"
-        value="{{quickInputText}}"
-        bindinput="onQuickInputChange"
-        auto-height
-        maxlength="500"
-      ></textarea>
-
-      <view class="modal-actions">
-        <button class="btn btn-secondary" bindtap="hideQuickInput">取消</button>
-        <button class="btn btn-primary" bindtap="parseQuickInput">解析并填充</button>
-      </view>
-    </view>
-  </view>
-</view>

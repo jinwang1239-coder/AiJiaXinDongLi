@@ -17,16 +17,99 @@ page {
   box-sizing: border-box;
 }
 
-/* 快速录入区域 */
-.quick-input-section {
+/* 批量导入区域 */
+.import-card {
   margin-bottom: 30rpx;
-  text-align: center;
 }
 
-.quick-input-btn {
-  padding: 20rpx 40rpx;
+.import-tips {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.6;
+  margin-bottom: 20rpx;
+}
+
+.import-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+  border: 2rpx solid #dce6ff;
+  border-radius: 8rpx;
+  background: #f7f9ff;
+}
+
+.import-file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-file-clear {
+  margin-left: 20rpx;
+  font-size: 24rpx;
+  color: #667eea;
+}
+
+.import-actions {
+  display: flex;
+  gap: 20rpx;
+}
+
+.import-btn {
+  flex: 1;
+  height: 76rpx;
   font-size: 28rpx;
-  border-radius: 25rpx;
+}
+
+.import-result {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #f0f0f0;
+}
+
+.import-result-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12rpx;
+}
+
+.import-result-summary {
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 16rpx;
+}
+
+.import-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.import-error-item {
+  padding: 16rpx;
+  border-radius: 8rpx;
+  background: #fff5f5;
+  border: 2rpx solid #ffd4d4;
+}
+
+.import-error-row {
+  font-size: 25rpx;
+  font-weight: 600;
+  color: #d4380d;
+  margin-bottom: 8rpx;
+}
+
+.import-error-text {
+  font-size: 24rpx;
+  color: #8c3a2b;
+  line-height: 1.5;
 }
 
 /* 表单卡片 */
@@ -67,17 +150,32 @@ page {
   color: #333;
 }
 
-.form-input, .form-picker {
+.form-input,
+.form-picker {
   width: 100%;
-  padding: 25rpx;
   border: 2rpx solid #e6e6e6;
   border-radius: 8rpx;
   font-size: 28rpx;
   background: #fff;
   box-sizing: border-box;
   transition: border-color 0.3s ease;
-  min-height: 48rpx;
-  display: flex; 
+}
+
+.form-input {
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 25rpx;
+}
+
+.form-input-placeholder {
+  color: #999;
+  font-size: 28rpx;
+}
+
+.form-picker {
+  min-height: 88rpx;
+  padding: 25rpx;
+  display: flex;
   align-items: center;
 }
 
@@ -120,25 +218,6 @@ page {
 .cascade-item.active .form-picker {
   border-color: #667eea;
   background: rgba(102, 126, 234, 0.05);
-}
-
-/* 手动输入区域 */
-.manual-input-section {
-  margin-top: 20rpx;
-  padding-top: 20rpx;
-  border-top: 2rpx solid #f0f0f0;
-}
-
-.manual-input-section .form-label {
-  font-size: 26rpx;
-  color: #666;
-}
-
-/* 确保所有输入框完全可见 */
-.form-input {
-  word-wrap: break-word;
-  overflow: visible;
-  white-space: normal;
 }
 
 /* 修复长文本显示问题 */
@@ -245,96 +324,4 @@ page {
   font-size: 30rpx;
   font-weight: 600;
   border-radius: 40rpx;
-}
-
-/* 快速录入弹窗 */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 40rpx;
-  box-sizing: border-box;
-}
-
-.modal-container {
-  width: 100%;
-  max-width: 600rpx;
-  background: #fff;
-  border-radius: 16rpx;
-  overflow: hidden;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 30rpx;
-  border-bottom: 2rpx solid #f0f0f0;
-  background: #f8f9ff;
-}
-
-.modal-title {
-  font-size: 32rpx;
-  font-weight: 600;
-  color: #333;
-}
-
-.modal-close {
-  width: 50rpx;
-  height: 50rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40rpx;
-  color: #999;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.modal-content {
-  padding: 30rpx;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.quick-input-tips {
-  font-size: 26rpx;
-  color: #666;
-  margin-bottom: 20rpx;
-  line-height: 1.5;
-}
-
-.quick-input-textarea {
-  width: 100%;
-  min-height: 300rpx;
-  padding: 20rpx;
-  border: 2rpx solid #e6e6e6;
-  border-radius: 8rpx;
-  font-size: 26rpx;
-  line-height: 1.6;
-  background: #fff;
-  box-sizing: border-box;
-  margin-bottom: 30rpx;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 20rpx;
-}
-
-.modal-actions .btn {
-  flex: 1;
-  height: 70rpx;
-  font-size: 28rpx;
-  border-radius: 35rpx;
 }
