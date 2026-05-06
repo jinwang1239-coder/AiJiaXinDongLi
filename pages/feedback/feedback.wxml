@@ -1,0 +1,106 @@
+<navigation-bar title="薪酬反馈" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y type="list">
+  <view class="feedback-container">
+    <view class="card submit-card">
+      <view class="section-title">提出反馈</view>
+      <view wx:if="{{profileCompleted}}" class="summary-block">
+        <view class="summary-row">
+          <text class="summary-label">反馈月份</text>
+          <text class="summary-value">{{monthLabel}}</text>
+        </view>
+        <view class="summary-row">
+          <text class="summary-label">当月薪酬</text>
+          <text class="summary-value summary-money">￥{{monthCommission}}</text>
+        </view>
+      </view>
+
+      <view wx:if="{{profileCompleted}}" class="form-group">
+        <view class="form-label">疑问内容</view>
+        <textarea
+          class="form-textarea"
+          placeholder="请输入薪酬异议或疑问内容"
+          maxlength="500"
+          value="{{feedbackForm.content}}"
+          bindinput="onContentInput"
+        />
+      </view>
+
+      <view wx:if="{{!profileCompleted}}" class="notice-block">
+        请先完善姓名、网格通账号、区县和所属网格后再提交反馈。
+      </view>
+
+      <button
+        class="primary-btn"
+        bindtap="submitFeedback"
+        loading="{{submitting}}"
+        disabled="{{!profileCompleted}}"
+      >
+        提交反馈
+      </button>
+    </view>
+
+    <view class="card history-card">
+      <view class="section-title">历史反馈</view>
+      <view wx:if="{{myFeedbacks.length > 0}}" class="list-block">
+        <view wx:for="{{myFeedbacks}}" wx:key="_id" class="feedback-item">
+          <view class="item-header">
+            <view class="item-title">{{item.salaryMonth}} 薪酬反馈</view>
+            <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
+          </view>
+          <view class="item-meta">当月薪酬：￥{{item.salaryAmountText}}</view>
+          <view class="item-content">{{item.content}}</view>
+          <view class="review-grid">
+            <view class="review-item">
+              <view class="review-label">区县经理</view>
+              <view class="status-tag small {{item.managerStatusClass}}">{{item.managerStatusText}}</view>
+            </view>
+            <view class="review-item">
+              <view class="review-label">基层监督员</view>
+              <view class="status-tag small {{item.supervisorStatusClass}}">{{item.supervisorStatusText}}</view>
+            </view>
+          </view>
+          <view class="item-time">{{item.createTimeText}}</view>
+        </view>
+      </view>
+      <view wx:else class="empty-text">暂无反馈记录</view>
+    </view>
+
+    <view wx:if="{{canApprove}}" class="card pending-card">
+      <view class="section-title">待审批反馈</view>
+      <view wx:if="{{pendingFeedbacks.length > 0}}" class="list-block">
+        <view wx:for="{{pendingFeedbacks}}" wx:key="_id" class="feedback-item">
+          <view class="item-header">
+            <view class="item-title">{{item.pendingRoleText}}</view>
+            <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
+          </view>
+          <view class="item-meta">{{item.submitter.name}} · {{item.district}} · {{item.salaryMonth}}</view>
+          <view class="item-meta">当月薪酬：￥{{item.salaryAmountText}}</view>
+          <view class="item-content">{{item.content}}</view>
+          <view class="action-row">
+            <button
+              class="action-btn action-btn-ghost"
+              data-id="{{item._id}}"
+              data-action="rejected"
+              bindtap="reviewFeedback"
+              loading="{{reviewing}}"
+            >
+              驳回
+            </button>
+            <button
+              class="action-btn"
+              data-id="{{item._id}}"
+              data-action="approved"
+              bindtap="reviewFeedback"
+              loading="{{reviewing}}"
+            >
+              通过
+            </button>
+          </view>
+          <view class="item-time">{{item.createTimeText}}</view>
+        </view>
+      </view>
+      <view wx:else class="empty-text">暂无待审批反馈</view>
+    </view>
+  </view>
+</scroll-view>

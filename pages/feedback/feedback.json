@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar"
+  },
+  "navigationBarTitleText": "薪酬反馈"
+}

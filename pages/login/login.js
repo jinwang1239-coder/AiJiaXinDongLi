@@ -335,6 +335,23 @@ Page({
     }
   },
 
+  navigateToFeedback() {
+    if (!this.data.hasUserInfo) {
+      wx.showToast({ title: '请先登录', icon: 'none' })
+      return
+    }
+
+    if (!this.data.profileCompleted) {
+      wx.showToast({ title: '请先完善个人信息', icon: 'none' })
+      this.setData({ showProfileModal: true })
+      return
+    }
+
+    wx.navigateTo({
+      url: '/pages/feedback/feedback'
+    })
+  },
+
   resetUserState() {
     this.setData({
       userInfo: null,

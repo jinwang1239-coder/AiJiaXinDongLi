@@ -49,9 +49,8 @@
     "ignore": [],
     "include": []
   },
-   "cloudfunctionRoot": "cloudfunctions/",
   "cloud": {
-    "env": "1g65i23w93c28d35" 
+    "env": "cloud1-1g65i23w93c28d35"
   },
   "appid": "wx524ce2ad21ef139f",
   "editorSetting": {},

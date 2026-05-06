@@ -3,6 +3,7 @@
     "pages/login/login",
     "pages/collect/collect",
     "pages/manage/manage",
+    "pages/feedback/feedback",
     "pages/profile/profile",
     "pages/index/index"
   ],

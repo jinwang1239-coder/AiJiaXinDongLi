@@ -66,6 +66,11 @@
           </view>
         </view>
       </view>
+
+      <view class="feedback-card">
+        <view class="feedback-tip">如对薪酬有异议，可在这里提交反馈并查看处理进度。</view>
+        <button class="feedback-btn" bindtap="navigateToFeedback">提出反馈</button>
+      </view>
     </view>
   </view>
 </scroll-view>
