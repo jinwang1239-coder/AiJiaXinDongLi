@@ -1,16 +1,38 @@
-<!--pages/login/login.wxml-->
 <navigation-bar title="业务收集系统" back="{{false}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y type="list">
   <view class="login-container">
     <view wx:if="{{!hasUserInfo}}" class="login-section">
       <view class="login-header">
-        <view class="app-subtitle">便捷的业务信息收集和酬金管理平台</view>
+        <view class="app-title">请选择工作界面</view>
+        <view class="app-subtitle">登录前先选择入口，登录后系统会按账号已配置的界面类型进入对应工作台。</view>
       </view>
+
+      <view class="workspace-selector">
+        <view
+          class="workspace-option {{selectedWorkspaceType === 'sales' ? 'workspace-option-active' : ''}}"
+          data-workspace-type="sales"
+          bindtap="selectWorkspace"
+        >
+          <view class="workspace-option-title">销售界面</view>
+          <view class="workspace-option-desc">适合装维人员，包含酬金查看、业务采集、数据管理。</view>
+        </view>
+
+        <view
+          class="workspace-option {{selectedWorkspaceType === 'line_project' ? 'workspace-option-active' : ''}}"
+          data-workspace-type="line_project"
+          bindtap="selectWorkspace"
+        >
+          <view class="workspace-option-title">集客线路界面</view>
+          <view class="workspace-option-desc">适合集客人员，包含线路项目统计、按人员、按工单与导入批次。</view>
+        </view>
+      </view>
+
+      <view class="workspace-hint">{{loginPrompt}}</view>
 
       <view class="login-actions">
         <button class="btn btn-primary login-btn" bindtap="onLogin" loading="{{loading}}">
-          <text wx:if="{{!loading}}">微信授权登录</text>
+          <text wx:if="{{!loading}}">进入并登录</text>
           <text wx:else>登录中...</text>
         </button>
       </view>
@@ -21,6 +43,7 @@
         <image class="user-avatar" src="{{userInfo.avatarUrl}}" mode="aspectFill"></image>
         <view class="user-content">
           <view class="user-line">姓名：{{profileDisplayName}}</view>
+          <view class="user-subtitle">{{roleText}}</view>
           <view class="user-subtitle">{{profileSubtitle}}</view>
         </view>
         <view class="user-tools">
@@ -32,7 +55,7 @@
       <view class="salary-card">
         <view class="salary-banner">{{monthLabel}} 当月计件酬金</view>
         <view class="salary-body">
-          <view class="salary-amount">¥{{stats.monthCommission}}</view>
+          <view class="salary-amount">￥{{stats.monthCommission}}</view>
           <view class="salary-note">本月共完成 {{stats.monthRecords}} 笔业务</view>
         </view>
       </view>
@@ -46,7 +69,7 @@
           </view>
           <view class="detail-item">
             <view class="detail-label">今日酬金</view>
-            <view class="detail-value detail-money">¥{{stats.todayCommission}}</view>
+            <view class="detail-value detail-money">￥{{stats.todayCommission}}</view>
           </view>
           <view class="detail-item">
             <view class="detail-label">本月业务量</view>
@@ -54,7 +77,7 @@
           </view>
           <view class="detail-item">
             <view class="detail-label">本月酬金</view>
-            <view class="detail-value detail-money">¥{{stats.monthCommission}}</view>
+            <view class="detail-value detail-money">￥{{stats.monthCommission}}</view>
           </view>
           <view class="detail-item">
             <view class="detail-label">累计业务量</view>
@@ -62,13 +85,13 @@
           </view>
           <view class="detail-item">
             <view class="detail-label">累计酬金</view>
-            <view class="detail-value detail-money">¥{{stats.totalCommission}}</view>
+            <view class="detail-value detail-money">￥{{stats.totalCommission}}</view>
           </view>
         </view>
       </view>
 
       <view class="feedback-card">
-        <view class="feedback-tip">如对薪酬有异议，可在这里提交反馈并查看处理进度。</view>
+        <view class="feedback-tip">如对酬金有异议，可在这里提交反馈并查看处理进度。</view>
         <button class="feedback-btn" bindtap="navigateToFeedback">提出反馈</button>
       </view>
     </view>

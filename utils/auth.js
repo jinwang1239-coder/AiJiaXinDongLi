@@ -1,3 +1,5 @@
+const workspace = require('./workspace')
+
 const LOGIN_STATE_KEY = 'xdlLoginState'
 
 function setStoredLoginState(isLoggedIn) {
@@ -97,6 +99,7 @@ function getCachedUser() {
     ...app.globalData.userInfo,
     openid: app.globalData.openid,
     role: app.globalData.userRole,
+    workspaceType: app.globalData.workspaceType,
     profileCompleted: app.globalData.profileCompleted
   }
 }
@@ -151,7 +154,11 @@ function login() {
         syncUserToApp(userData)
         resolve({
           userInfo: getApp().globalData.userInfo,
-          userRole: userData
+          user: {
+            ...userData,
+            workspaceType: workspace.getWorkspaceType(userData)
+          },
+          isNewUser: !!res.result.data.isNewUser
         })
       })
       .catch(err => {

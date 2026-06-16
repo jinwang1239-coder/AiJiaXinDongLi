@@ -8,6 +8,23 @@ const db = cloud.database()
 const _ = db.command
 const MAX_QUERY_LIMIT = 100
 
+const WORKSPACE_TYPES = {
+  SALES: 'sales',
+  LINE_PROJECT: 'line_project'
+}
+
+const FEEDBACK_SCENES = {
+  SALES_SALARY: 'sales_salary',
+  LINE_PROJECT_WORKORDERS: 'line_project_workorders'
+}
+
+const COLLECTIONS = {
+  USERS: 'users',
+  FEEDBACKS: 'salary_feedbacks',
+  ROUTES: 'feedback_routes',
+  LINE_PROJECT_CONFIRMS: 'line_project_month_confirms'
+}
+
 exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
   const { action, data } = event || {}
@@ -17,9 +34,11 @@ exports.main = async (event) => {
       case 'create':
         return await createFeedback(wxContext, data)
       case 'listMine':
-        return await listMyFeedbacks(wxContext)
+        return await listMyFeedbacks(wxContext, data)
       case 'listPending':
-        return await listPendingFeedbacks(wxContext)
+        return await listPendingFeedbacks(wxContext, data)
+      case 'getSceneSummary':
+        return await getSceneSummary(wxContext, data)
       case 'review':
         return await reviewFeedback(wxContext, data)
       case 'test':
@@ -185,8 +204,91 @@ function sortByCreateTimeDesc(records = []) {
   })
 }
 
+function normalizeWorkspaceType(workspaceType) {
+  return workspaceType === WORKSPACE_TYPES.LINE_PROJECT
+    ? WORKSPACE_TYPES.LINE_PROJECT
+    : WORKSPACE_TYPES.SALES
+}
+
+function getDefaultScene(workspaceType) {
+  return workspaceType === WORKSPACE_TYPES.LINE_PROJECT
+    ? FEEDBACK_SCENES.LINE_PROJECT_WORKORDERS
+    : FEEDBACK_SCENES.SALES_SALARY
+}
+
+function resolveContext(data = {}) {
+  const workspaceType = normalizeWorkspaceType(data.workspaceType)
+  const scene = String(data.scene || getDefaultScene(workspaceType)).trim() || getDefaultScene(workspaceType)
+
+  return {
+    workspaceType,
+    scene
+  }
+}
+
+function normalizeRecordContext(record = {}) {
+  const workspaceType = normalizeWorkspaceType(record.workspaceType)
+  const scene = String(record.scene || getDefaultScene(workspaceType)).trim() || getDefaultScene(workspaceType)
+
+  return {
+    workspaceType,
+    scene
+  }
+}
+
+function matchContext(record, context) {
+  const recordContext = normalizeRecordContext(record)
+  return (
+    recordContext.workspaceType === context.workspaceType &&
+    recordContext.scene === context.scene
+  )
+}
+
+function getContextTitle(context) {
+  return context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT
+    ? '集客开通酬金反馈'
+    : '酬金反馈'
+}
+
+function isProcessingFeedbackStatus(status) {
+  return ['pending', 'processing'].includes(String(status || '').trim())
+}
+
+function formatDateTime(dateInput) {
+  if (!dateInput) {
+    return ''
+  }
+
+  const date = dateInput instanceof Date ? dateInput : new Date(dateInput)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function buildFeedbackSummaryRecord(record) {
+  if (!record) {
+    return null
+  }
+
+  const context = normalizeRecordContext(record)
+  return {
+    ...record,
+    workspaceType: context.workspaceType,
+    scene: context.scene,
+    createTimeText: formatDateTime(record.createTime),
+    updateTimeText: formatDateTime(record.updateTime)
+  }
+}
+
 async function getCurrentUser(openid) {
-  const result = await db.collection('users').where({ openid }).limit(1).get()
+  const result = await db.collection(COLLECTIONS.USERS).where({ openid }).limit(1).get()
 
   if (!result.data || result.data.length === 0) {
     throw new Error('用户不存在')
@@ -198,7 +300,7 @@ async function getCurrentUser(openid) {
 async function getDistrictRoute(district) {
   let result
   try {
-    result = await db.collection('feedback_routes').where({ district }).get()
+    result = await db.collection(COLLECTIONS.ROUTES).where({ district }).get()
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
       throw new Error('请先在云数据库创建 feedback_routes 集合并配置区县审批路由')
@@ -224,7 +326,7 @@ async function getApproverByGridAccount(gridAccount, district, roleText) {
     throw new Error(`请先配置${roleText}网格通账号`)
   }
 
-  const result = await db.collection('users').where({ gridAccount }).limit(2).get()
+  const result = await db.collection(COLLECTIONS.USERS).where({ gridAccount }).limit(2).get()
 
   if (!result.data || result.data.length === 0) {
     throw new Error(`未找到${roleText}对应的网格通账号用户`)
@@ -242,9 +344,67 @@ async function getApproverByGridAccount(gridAccount, district, roleText) {
   return user
 }
 
+async function getLatestFeedbackBySubmitter(openid, context, salaryMonth = '') {
+  let records = []
+  try {
+    records = await fetchAll(
+      db.collection(COLLECTIONS.FEEDBACKS).where({ 'submitter.openid': openid })
+    )
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) {
+      return null
+    }
+    throw error
+  }
+
+  const matchedRecords = sortByCreateTimeDesc(records.filter(record => {
+    if (!matchContext(record, context)) {
+      return false
+    }
+
+    if (salaryMonth && String(record.salaryMonth || '').trim() !== salaryMonth) {
+      return false
+    }
+
+    return true
+  }))
+
+  return matchedRecords[0] || null
+}
+
+async function getExistingLineProjectConfirm(openid, salaryMonth, context) {
+  if (context.workspaceType !== WORKSPACE_TYPES.LINE_PROJECT) {
+    return null
+  }
+
+  let records = []
+  try {
+    records = await fetchAll(
+      db.collection(COLLECTIONS.LINE_PROJECT_CONFIRMS).where({
+        'submitter.openid': openid,
+        settlementMonth: salaryMonth
+      })
+    )
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) {
+      return null
+    }
+    throw error
+  }
+
+  return sortByCreateTimeDesc(records.filter(record => {
+    if (record.status !== 'confirmed') {
+      return false
+    }
+
+    return matchContext(record, context)
+  }))[0] || null
+}
+
 async function createFeedback(wxContext, data = {}) {
   const openid = wxContext.OPENID
   const currentUser = await getCurrentUser(openid)
+  const context = resolveContext(data)
 
   if (!isProfileCompleted(currentUser)) {
     return {
@@ -265,6 +425,26 @@ async function createFeedback(wxContext, data = {}) {
     return {
       success: false,
       error: '当前用户未配置区县'
+    }
+  }
+
+  const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
+
+  if (context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT) {
+    const existingConfirm = await getExistingLineProjectConfirm(openid, salaryMonth, context)
+    if (existingConfirm) {
+      return {
+        success: false,
+        error: '本月已完成签字确认，不能再提交问题反馈'
+      }
+    }
+
+    const latestFeedback = await getLatestFeedbackBySubmitter(openid, context, salaryMonth)
+    if (latestFeedback && isProcessingFeedbackStatus(latestFeedback.status)) {
+      return {
+        success: false,
+        error: '当前月份已有待处理反馈，请勿重复提交'
+      }
     }
   }
 
@@ -297,7 +477,9 @@ async function createFeedback(wxContext, data = {}) {
     gridAccount: currentUser.gridAccount,
     district: currentUser.district,
     gridName: currentUser.gridName || '',
-    salaryMonth: String(data.salaryMonth || getCurrentMonthLabel()).trim(),
+    workspaceType: context.workspaceType,
+    scene: context.scene,
+    salaryMonth,
     salaryAmount: normalizeMoney(data.salaryAmount),
     content,
     status: 'pending',
@@ -310,7 +492,7 @@ async function createFeedback(wxContext, data = {}) {
 
   let result
   try {
-    result = await db.collection('salary_feedbacks').add({
+    result = await db.collection(COLLECTIONS.FEEDBACKS).add({
       data: feedback
     })
   } catch (error) {
@@ -331,14 +513,15 @@ async function createFeedback(wxContext, data = {}) {
   }
 }
 
-async function listMyFeedbacks(wxContext) {
+async function listMyFeedbacks(wxContext, data = {}) {
   const openid = wxContext.OPENID
   await getCurrentUser(openid)
+  const context = resolveContext(data)
 
   let records = []
   try {
     records = await fetchAll(
-      db.collection('salary_feedbacks').where({ 'submitter.openid': openid })
+      db.collection(COLLECTIONS.FEEDBACKS).where({ 'submitter.openid': openid })
     )
   } catch (error) {
     if (!isCollectionNotFoundError(error)) {
@@ -349,19 +532,24 @@ async function listMyFeedbacks(wxContext) {
   return {
     success: true,
     data: {
-      records: sortByCreateTimeDesc(records)
+      context,
+      title: getContextTitle(context),
+      records: sortByCreateTimeDesc(records.filter(record => matchContext(record, context)))
     }
   }
 }
 
-async function listPendingFeedbacks(wxContext) {
+async function listPendingFeedbacks(wxContext, data = {}) {
   const openid = wxContext.OPENID
   const currentUser = await getCurrentUser(openid)
+  const context = resolveContext(data)
 
   if (!currentUser.gridAccount) {
     return {
       success: true,
       data: {
+        context,
+        title: getContextTitle(context),
         canApprove: false,
         records: []
       }
@@ -370,12 +558,14 @@ async function listPendingFeedbacks(wxContext) {
 
   let routeRecords = []
   try {
-    routeRecords = await fetchAll(db.collection('feedback_routes'))
+    routeRecords = await fetchAll(db.collection(COLLECTIONS.ROUTES))
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
       return {
         success: true,
         data: {
+          context,
+          title: getContextTitle(context),
           canApprove: false,
           records: []
         }
@@ -394,7 +584,7 @@ async function listPendingFeedbacks(wxContext) {
   let relatedRecords = []
   try {
     relatedRecords = await fetchAll(
-      db.collection('salary_feedbacks').where(_.or([
+      db.collection(COLLECTIONS.FEEDBACKS).where(_.or([
         { 'managerReview.gridAccount': currentUser.gridAccount },
         { 'supervisorReview.gridAccount': currentUser.gridAccount }
       ]))
@@ -406,6 +596,7 @@ async function listPendingFeedbacks(wxContext) {
   }
 
   const records = sortByCreateTimeDesc(relatedRecords)
+    .filter(record => matchContext(record, context))
     .map(record => ({
       ...record,
       pendingReviewType: getPendingReviewType(record, currentUser.gridAccount)
@@ -415,8 +606,28 @@ async function listPendingFeedbacks(wxContext) {
   return {
     success: true,
     data: {
+      context,
+      title: getContextTitle(context),
       canApprove,
       records
+    }
+  }
+}
+
+async function getSceneSummary(wxContext, data = {}) {
+  const openid = wxContext.OPENID
+  await getCurrentUser(openid)
+  const context = resolveContext(data)
+  const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
+  const record = await getLatestFeedbackBySubmitter(openid, context, salaryMonth)
+
+  return {
+    success: true,
+    data: {
+      context,
+      title: getContextTitle(context),
+      salaryMonth,
+      record: buildFeedbackSummaryRecord(record)
     }
   }
 }
@@ -443,7 +654,7 @@ async function reviewFeedback(wxContext, data = {}) {
 
   let recordResult
   try {
-    recordResult = await db.collection('salary_feedbacks').doc(feedbackId).get()
+    recordResult = await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
       return {
@@ -504,7 +715,7 @@ async function reviewFeedback(wxContext, data = {}) {
   const status = resolveFeedbackStatus(managerReview.status, supervisorReview.status)
 
   try {
-    await db.collection('salary_feedbacks').doc(feedbackId).update({
+    await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({
       data: {
         managerReview,
         supervisorReview,

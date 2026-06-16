@@ -9,6 +9,7 @@ module.exports = {
         nickName: 'string',
         avatarUrl: 'string',
         role: 'string',
+        workspaceType: 'string',
         status: 'string',
         phone: 'string',
         department: 'string',
@@ -23,6 +24,7 @@ module.exports = {
         { keys: { openid: 1 }, unique: true },
         { keys: { gridAccount: 1 } },
         { keys: { role: 1 } },
+        { keys: { workspaceType: 1 } },
         { keys: { createTime: -1 } }
       ]
     },
@@ -82,12 +84,112 @@ module.exports = {
       ]
     },
     {
+      name: 'line_project_records',
+      description: '集客线路项目工单人员明细表',
+      fields: {
+        settlementMonth: 'string',
+        majorCategory: 'string',
+        subCategory: 'string',
+        district: 'string',
+        gridAccount: 'string',
+        userOpenid: 'string',
+        bindingSource: 'string',
+        personName: 'string',
+        personKey: 'string',
+        personIdCardHash: 'string',
+        personIdCardMasked: 'string',
+        businessQty: 'number',
+        workOrderNameRaw: 'string',
+        workOrderType: 'string',
+        workOrderSubject: 'string',
+        workOrderCode: 'string',
+        workOrderKey: 'string',
+        excelAmount: 'number',
+        excelFormulaAmount: 'number',
+        calculatedAmount: 'number',
+        amountDiff: 'number',
+        checkStatus: 'string',
+        checkMessage: 'string',
+        workloadItems: 'array',
+        importBatchId: 'string',
+        sourceSheet: 'string',
+        sourceRowNo: 'number',
+        sourceFileName: 'string',
+        createdBy: 'object',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { settlementMonth: 1, subCategory: 1, district: 1 } },
+        { keys: { settlementMonth: 1, gridAccount: 1 } },
+        { keys: { settlementMonth: 1, personKey: 1 } },
+        { keys: { settlementMonth: 1, workOrderKey: 1 } },
+        { keys: { importBatchId: 1 } },
+        { keys: { createTime: -1 } }
+      ]
+    },
+    {
+      name: 'line_project_import_batches',
+      description: '集客线路项目导入批次表',
+      fields: {
+        batchNo: 'string',
+        settlementMonth: 'string',
+        majorCategory: 'string',
+        subCategory: 'string',
+        sourceFileName: 'string',
+        fileID: 'string',
+        totalRows: 'number',
+        successRows: 'number',
+        errorRows: 'number',
+        warningRows: 'number',
+        excelAmountTotal: 'number',
+        calculatedAmountTotal: 'number',
+        totalPeople: 'number',
+        totalWorkOrders: 'number',
+        districts: 'array',
+        replacedRows: 'number',
+        validationMismatchCount: 'number',
+        status: 'string',
+        errorSummary: 'array',
+        createdBy: 'object',
+        createTime: 'date'
+      },
+      indexes: [
+        { keys: { settlementMonth: 1, subCategory: 1, createTime: -1 } },
+        { keys: { batchNo: 1 }, unique: true },
+        { keys: { createTime: -1 } }
+      ]
+    },
+    {
+      name: 'user_person_bindings',
+      description: '系统用户与集客线路人员绑定表',
+      fields: {
+        userOpenid: 'string',
+        gridAccount: 'string',
+        personKey: 'string',
+        personName: 'string',
+        personIdCardHash: 'string',
+        district: 'string',
+        bindingSource: 'string',
+        status: 'string',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { userOpenid: 1 } },
+        { keys: { personKey: 1 }, unique: true },
+        { keys: { gridAccount: 1 } }
+      ]
+    },
+    {
       name: 'salary_feedbacks',
       description: '薪酬反馈表',
       fields: {
         gridAccount: 'string',
         district: 'string',
         gridName: 'string',
+        workspaceType: 'string',
+        scene: 'string',
         salaryMonth: 'string',
         salaryAmount: 'number',
         content: 'string',
@@ -104,6 +206,31 @@ module.exports = {
         { keys: { 'submitter.openid': 1 } },
         { keys: { 'managerReview.gridAccount': 1 } },
         { keys: { 'supervisorReview.gridAccount': 1 } },
+        { keys: { createTime: -1 } }
+      ]
+    },
+    {
+      name: 'line_project_month_confirms',
+      description: '集客线路项目月度签字确认表',
+      fields: {
+        workspaceType: 'string',
+        scene: 'string',
+        gridAccount: 'string',
+        district: 'string',
+        gridName: 'string',
+        settlementMonth: 'string',
+        amount: 'number',
+        status: 'string',
+        confirmType: 'string',
+        submitter: 'object',
+        confirmTime: 'date',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { gridAccount: 1 } },
+        { keys: { settlementMonth: 1 } },
+        { keys: { 'submitter.openid': 1 } },
         { keys: { createTime: -1 } }
       ]
     },
@@ -134,7 +261,23 @@ module.exports = {
       read: true,
       write: false
     },
+    line_project_records: {
+      read: true,
+      write: false
+    },
+    line_project_import_batches: {
+      read: true,
+      write: false
+    },
+    user_person_bindings: {
+      read: true,
+      write: false
+    },
     salary_feedbacks: {
+      read: true,
+      write: false
+    },
+    line_project_month_confirms: {
       read: true,
       write: false
     },

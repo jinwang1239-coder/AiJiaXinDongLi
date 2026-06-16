@@ -3,6 +3,7 @@ const auth = require('../../utils/auth')
 const commission = require('../../utils/commission-fixed')
 const productConfig = require('../../utils/product-config')
 const storage = require('../../utils/storage')
+const workspace = require('../../utils/workspace')
 
 const DISTRICTS = [
   '监利',
@@ -156,6 +157,11 @@ Page({
     const user = await auth.ensureLoggedIn()
     if (!user) {
       this.showLoginRequiredModal()
+      return false
+    }
+
+    if (!workspace.isSalesWorkspace(user)) {
+      workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.SALES)
       return false
     }
 

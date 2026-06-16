@@ -1,0 +1,5 @@
+<navigation-bar title="页面跳转中" color="black" background="#FFF"></navigation-bar>
+
+<view class="page-container">
+  <view class="empty-text">正在跳转到我的工单...</view>
+</view>

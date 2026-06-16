@@ -38,7 +38,7 @@
       </view>
 
       <button class="save-btn" bindtap="onSave" loading="{{saving}}">保存修改</button>
-      <button class="exit-btn" bindtap="backToLogin">退出修改</button>
+      <button class="exit-btn" bindtap="backToLogin">返回工作台</button>
     </view>
   </view>
 </scroll-view>

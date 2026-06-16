@@ -1,4 +1,40 @@
 const auth = require('../../utils/auth')
+const lineProjectService = require('../../utils/line-project-service')
+const workspace = require('../../utils/workspace')
+
+const FEEDBACK_CONTEXTS = {
+  sales: {
+    workspaceType: workspace.WORKSPACE_TYPES.SALES,
+    scene: 'sales_salary',
+    navTitle: '酬金反馈',
+    sectionTitle: '提出反馈',
+    historyTitle: '历史反馈',
+    pendingTitle: '待审批反馈',
+    monthFieldLabel: '反馈月份',
+    amountFieldLabel: '当月酬金',
+    submitButtonText: '提交反馈',
+    textareaPlaceholder: '请输入薪酬异议或疑问内容',
+    recordTitleSuffix: '酬金反馈'
+  },
+  line_project: {
+    workspaceType: workspace.WORKSPACE_TYPES.LINE_PROJECT,
+    scene: 'line_project_workorders',
+    navTitle: '问题反馈',
+    sectionTitle: '问题反馈',
+    historyTitle: '反馈记录',
+    pendingTitle: '待审批反馈',
+    monthFieldLabel: '结算月份',
+    amountFieldLabel: '本人酬金',
+    submitButtonText: '提交反馈',
+    textareaPlaceholder: '请输入本月酬金疑问或反馈说明',
+    recordTitleSuffix: '集客开通酬金反馈'
+  }
+}
+
+function getCurrentMonthLabel() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
 
 Page({
   data: {
@@ -7,7 +43,20 @@ Page({
     reviewing: false,
     profileCompleted: false,
     canApprove: false,
-    monthLabel: '',
+    navTitle: FEEDBACK_CONTEXTS.sales.navTitle,
+    sectionTitle: FEEDBACK_CONTEXTS.sales.sectionTitle,
+    historyTitle: FEEDBACK_CONTEXTS.sales.historyTitle,
+    pendingTitle: FEEDBACK_CONTEXTS.sales.pendingTitle,
+    monthFieldLabel: FEEDBACK_CONTEXTS.sales.monthFieldLabel,
+    amountFieldLabel: FEEDBACK_CONTEXTS.sales.amountFieldLabel,
+    submitButtonText: FEEDBACK_CONTEXTS.sales.submitButtonText,
+    textareaPlaceholder: FEEDBACK_CONTEXTS.sales.textareaPlaceholder,
+    recordTitleSuffix: FEEDBACK_CONTEXTS.sales.recordTitleSuffix,
+    feedbackContext: {
+      workspaceType: FEEDBACK_CONTEXTS.sales.workspaceType,
+      scene: FEEDBACK_CONTEXTS.sales.scene
+    },
+    monthLabel: getCurrentMonthLabel(),
     monthCommission: '0.00',
     feedbackForm: {
       content: ''
@@ -16,26 +65,45 @@ Page({
     pendingFeedbacks: []
   },
 
-  onLoad() {
-    this.setMonthLabel()
+  onLoad(options = {}) {
+    this.initPageContext(options)
   },
 
   async onShow() {
     await this.loadPageData()
   },
 
-  setMonthLabel() {
-    const now = new Date()
-    const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    this.setData({ monthLabel })
+  initPageContext(options = {}) {
+    const isLineProject = options.workspaceType === workspace.WORKSPACE_TYPES.LINE_PROJECT
+    const baseContext = isLineProject ? FEEDBACK_CONTEXTS.line_project : FEEDBACK_CONTEXTS.sales
+    const monthLabel = String(options.salaryMonth || options.monthLabel || getCurrentMonthLabel()).trim() || getCurrentMonthLabel()
+    const salaryAmount = Number(options.salaryAmount || 0)
+
+    this.setData({
+      navTitle: baseContext.navTitle,
+      sectionTitle: baseContext.sectionTitle,
+      historyTitle: baseContext.historyTitle,
+      pendingTitle: baseContext.pendingTitle,
+      monthFieldLabel: baseContext.monthFieldLabel,
+      amountFieldLabel: baseContext.amountFieldLabel,
+      submitButtonText: baseContext.submitButtonText,
+      textareaPlaceholder: baseContext.textareaPlaceholder,
+      recordTitleSuffix: baseContext.recordTitleSuffix,
+      feedbackContext: {
+        workspaceType: baseContext.workspaceType,
+        scene: String(options.scene || baseContext.scene).trim() || baseContext.scene
+      },
+      monthLabel,
+      monthCommission: this.formatMoney(salaryAmount)
+    })
   },
 
   isProfileCompleted(user) {
     return !!user && !!(
-      (user.realName || '').trim() &&
-      (user.gridAccount || '').trim() &&
-      (user.district || '').trim() &&
-      (user.gridName || '').trim()
+      String(user.realName || '').trim() &&
+      String(user.gridAccount || '').trim() &&
+      String(user.district || '').trim() &&
+      String(user.gridName || '').trim()
     )
   },
 
@@ -95,9 +163,14 @@ Page({
     return '待审批'
   },
 
+  buildRecordTitle(record) {
+    return `${record.salaryMonth} ${this.data.recordTitleSuffix}`
+  },
+
   buildFeedbackList(records = []) {
     return records.map(record => ({
       ...record,
+      recordTitle: this.buildRecordTitle(record),
       createTimeText: this.formatDateTime(record.createTime),
       managerStatusText: this.getStatusText(record.managerReview && record.managerReview.status),
       managerStatusClass: this.getStatusClass(record.managerReview && record.managerReview.status),
@@ -122,7 +195,35 @@ Page({
     }, 300)
   },
 
-  async loadSalarySummary() {
+  isLineProjectContext() {
+    return this.data.feedbackContext.workspaceType === workspace.WORKSPACE_TYPES.LINE_PROJECT
+  },
+
+  buildFeedbackPayload(extraData = {}) {
+    return {
+      workspaceType: this.data.feedbackContext.workspaceType,
+      scene: this.data.feedbackContext.scene,
+      ...extraData
+    }
+  },
+
+  async callFeedbackFunction(action, payload = {}) {
+    const res = await wx.cloud.callFunction({
+      name: 'salaryFeedback',
+      data: {
+        action,
+        data: payload
+      }
+    })
+
+    if (!res.result || !res.result.success) {
+      throw new Error((res.result && res.result.error) || '反馈请求失败')
+    }
+
+    return res.result.data || {}
+  },
+
+  async loadSalesSummary() {
     const res = await wx.cloud.callFunction({
       name: 'businessData',
       data: {
@@ -147,50 +248,70 @@ Page({
     })
   },
 
-  async loadMyFeedbacks() {
-    const res = await wx.cloud.callFunction({
-      name: 'salaryFeedback',
-      data: {
-        action: 'listMine'
+  async loadLineProjectSummary() {
+    const data = await lineProjectService.callLineProject('getMyOverview', {
+      filters: {
+        settlementMonth: this.data.monthLabel
       }
     })
 
-    if (!res.result || !res.result.success) {
-      throw new Error((res.result && res.result.error) || '反馈记录加载失败')
+    this.setData({
+      monthCommission: this.formatMoney(data.summary && data.summary.totalAmount)
+    })
+  },
+
+  async loadContextSummary() {
+    if (this.isLineProjectContext()) {
+      await this.loadLineProjectSummary()
+      return
     }
 
+    await this.loadSalesSummary()
+  },
+
+  async loadMyFeedbacks() {
+    const resultData = await this.callFeedbackFunction('listMine', this.buildFeedbackPayload())
     this.setData({
-      myFeedbacks: this.buildFeedbackList((res.result.data && res.result.data.records) || [])
+      myFeedbacks: this.buildFeedbackList(resultData.records || [])
     })
   },
 
   async loadPendingFeedbacks() {
-    const res = await wx.cloud.callFunction({
-      name: 'salaryFeedback',
-      data: {
-        action: 'listPending'
-      }
-    })
-
-    if (!res.result || !res.result.success) {
-      throw new Error((res.result && res.result.error) || '待审批记录加载失败')
-    }
-
-    const resultData = res.result.data || {}
+    const resultData = await this.callFeedbackFunction('listPending', this.buildFeedbackPayload())
     this.setData({
       canApprove: !!resultData.canApprove,
       pendingFeedbacks: this.buildFeedbackList(resultData.records || [])
     })
   },
 
+  ensureWorkspaceAccess(user) {
+    if (this.isLineProjectContext()) {
+      if (!workspace.isLineProjectWorkspace(user)) {
+        workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.LINE_PROJECT)
+        return false
+      }
+      return true
+    }
+
+    if (!workspace.isSalesWorkspace(user)) {
+      workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.SALES)
+      return false
+    }
+
+    return true
+  },
+
   async loadPageData() {
     try {
       this.setData({ loading: true })
-      this.setMonthLabel()
 
       const user = await auth.ensureLoggedIn()
       if (!user) {
         this.redirectToLogin()
+        return
+      }
+
+      if (!this.ensureWorkspaceAccess(user)) {
         return
       }
 
@@ -208,12 +329,12 @@ Page({
       }
 
       await Promise.all([
-        this.loadSalarySummary(),
+        this.loadContextSummary(),
         this.loadMyFeedbacks(),
         this.loadPendingFeedbacks()
       ])
     } catch (error) {
-      console.error('加载薪酬反馈页面失败:', error)
+      console.error('加载反馈页面失败:', error)
       wx.showToast({
         title: error.message || '加载失败',
         icon: 'none'
@@ -230,7 +351,7 @@ Page({
   },
 
   async submitFeedback() {
-    const content = (this.data.feedbackForm.content || '').trim()
+    const content = String(this.data.feedbackForm.content || '').trim()
     if (!this.data.profileCompleted) {
       wx.showToast({ title: '请先完善个人信息', icon: 'none' })
       return
@@ -243,21 +364,11 @@ Page({
 
     try {
       this.setData({ submitting: true })
-      const res = await wx.cloud.callFunction({
-        name: 'salaryFeedback',
-        data: {
-          action: 'create',
-          data: {
-            salaryMonth: this.data.monthLabel,
-            salaryAmount: Number(this.data.monthCommission),
-            content
-          }
-        }
-      })
-
-      if (!res.result || !res.result.success) {
-        throw new Error((res.result && res.result.error) || '反馈提交失败')
-      }
+      await this.callFeedbackFunction('create', this.buildFeedbackPayload({
+        salaryMonth: this.data.monthLabel,
+        salaryAmount: Number(this.data.monthCommission),
+        content
+      }))
 
       this.setData({
         'feedbackForm.content': ''
@@ -299,20 +410,10 @@ Page({
 
         try {
           this.setData({ reviewing: true })
-          const response = await wx.cloud.callFunction({
-            name: 'salaryFeedback',
-            data: {
-              action: 'review',
-              data: {
-                feedbackId: id,
-                action
-              }
-            }
+          await this.callFeedbackFunction('review', {
+            feedbackId: id,
+            action
           })
-
-          if (!response.result || !response.result.success) {
-            throw new Error((response.result && response.result.error) || '审批失败')
-          }
 
           wx.showToast({
             title: '审批完成',

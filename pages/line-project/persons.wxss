@@ -1,0 +1,12 @@
+.page-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #f5f9ff 0%, #eef5f0 100%);
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #6b7280;
+}

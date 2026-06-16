@@ -10,6 +10,15 @@
   min-height: 100vh;
 }
 
+.line-project-entry {
+  margin-bottom: 30rpx;
+}
+
+.line-project-btn {
+  width: 100%;
+  margin-top: 20rpx;
+}
+
 /* 统计卡片 */
 .stats-overview {
   margin-bottom: 30rpx;

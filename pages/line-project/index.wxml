@@ -1,0 +1,67 @@
+<navigation-bar title="集客开通酬金" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y>
+  <view class="line-project-page">
+    <view class="card workspace-card">
+      <view class="workspace-main">
+        <view class="workspace-title">{{profileDisplayName}}</view>
+        <view class="workspace-subtitle">{{roleText}}</view>
+        <view class="workspace-meta">{{profileSubtitle}}</view>
+      </view>
+      <view class="workspace-actions">
+        <button class="btn btn-secondary mini-btn workspace-btn" bindtap="openProfile">个人信息</button>
+        <button class="btn btn-secondary mini-btn workspace-btn ghost-btn" bindtap="onLogout">退出登录</button>
+      </view>
+      <view wx:if="{{canImport}}" class="workspace-admin">
+        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToImport">管理员导入</button>
+      </view>
+    </view>
+
+    <view class="card month-card">
+      <view class="card-header">
+        <view class="card-title">结算月份</view>
+        <button class="btn btn-secondary mini-btn" bindtap="refreshOverview" loading="{{loading}}">刷新</button>
+      </view>
+      <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
+        <view class="month-picker">{{filters.settlementMonth}}</view>
+      </picker>
+      <view class="month-tip">当前模块固定为 {{filters.subCategory}}</view>
+    </view>
+
+    <view class="card summary-card">
+      <view class="summary-label">本月总酬金</view>
+      <view class="summary-amount">￥{{overview.summary.totalAmountText}}</view>
+
+      <view class="summary-formula">
+        <view class="summary-formula-title">{{overview.summary.formulaTitle}}</view>
+        <view class="summary-formula-grid">
+          <view
+            class="summary-formula-item {{item.subCategory === filters.subCategory ? 'summary-formula-item-active' : ''}}"
+            wx:for="{{overview.summary.compositionDisplay}}"
+            wx:key="subCategory"
+            data-sub-category="{{item.subCategory}}"
+            bindtap="onCompositionTap"
+          >
+            <view class="summary-formula-name">{{item.subCategory}}</view>
+            <view class="summary-formula-value">{{item.amountText}}元</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="summary-stats">
+        <view class="summary-stat">
+          <view class="summary-stat-value">{{overview.summary.totalWorkOrders}}</view>
+          <view class="summary-stat-label">参与工单</view>
+        </view>
+        <view class="summary-stat">
+          <view class="summary-stat-value">{{overview.summary.totalRecords}}</view>
+          <view class="summary-stat-label">明细条数</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="action-row">
+      <button class="btn btn-primary workorders-btn" bindtap="navigateToWorkOrders">查看我的工单</button>
+    </view>
+  </view>
+</scroll-view>

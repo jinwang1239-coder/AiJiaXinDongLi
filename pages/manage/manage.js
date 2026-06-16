@@ -2,11 +2,13 @@
 const auth = require('../../utils/auth')
 const exportUtil = require('../../utils/export')
 const commission = require('../../utils/commission-fixed')
+const workspace = require('../../utils/workspace')
 
 Page({
   data: {
     // 用户信息
     userRole: null,
+    workspaceType: workspace.WORKSPACE_TYPES.SALES,
     userDistrict: '',
     currentOpenid: '',
     userGridAccount: '',
@@ -128,8 +130,14 @@ Page({
       return false
     }
 
+    if (!workspace.isSalesWorkspace(user)) {
+      workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.SALES)
+      return false
+    }
+
     this.setData({
       userRole: user.role || null,
+      workspaceType: workspace.getWorkspaceType(user),
       userDistrict: user.district || '',
       currentOpenid: user.openid || '',
       userGridAccount: user.gridAccount || ''
@@ -561,6 +569,12 @@ ${this.buildSettlementDetailText(record)}
   /**
    * 删除记录
    */
+  navigateToLineProject() {
+    wx.navigateTo({
+      url: '/pages/line-project/index'
+    })
+  },
+
   deleteRecord(e) {
     const { index } = e.currentTarget.dataset
     const record = this.data.businessRecords[index]

@@ -1,3 +1,5 @@
+const workspace = require('./utils/workspace')
+
 App({
   onLaunch() {
     if (!wx.cloud) {
@@ -12,6 +14,7 @@ App({
     this.globalData = {
       userInfo: null,
       userRole: null,
+      workspaceType: workspace.WORKSPACE_TYPES.SALES,
       hasUserInfo: false,
       openid: '',
       profileCompleted: false,
@@ -53,10 +56,15 @@ App({
     return this.globalData.userRole
   },
 
+  getWorkspaceType() {
+    return this.globalData.workspaceType
+  },
+
   setUserProfile(user) {
     if (!user) {
       this.globalData.userInfo = null
       this.globalData.userRole = null
+      this.globalData.workspaceType = workspace.WORKSPACE_TYPES.SALES
       this.globalData.hasUserInfo = false
       this.globalData.openid = ''
       this.globalData.profileCompleted = false
@@ -76,11 +84,13 @@ App({
       avatarUrl: user.avatarUrl || ''
     }
     this.globalData.userRole = user.role || null
+    this.globalData.workspaceType = workspace.getWorkspaceType(user)
     this.globalData.hasUserInfo = true
     this.globalData.openid = user.openid || ''
     this.globalData.profileCompleted = profileCompleted
     this.globalData.userProfile = {
       ...user,
+      workspaceType: workspace.getWorkspaceType(user),
       profileCompleted
     }
   }

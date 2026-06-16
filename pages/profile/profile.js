@@ -1,5 +1,6 @@
 const auth = require('../../utils/auth')
 const gridOptions = require('../../utils/grid-options')
+const workspace = require('../../utils/workspace')
 
 Page({
   data: {
@@ -12,6 +13,7 @@ Page({
       nickName: '',
       avatarUrl: '',
       role: '',
+      workspaceType: workspace.WORKSPACE_TYPES.SALES,
       realName: '',
       gridAccount: '',
       district: '',
@@ -50,48 +52,35 @@ Page({
       icon: 'none'
     })
     setTimeout(() => {
-      wx.switchTab({
-        url: '/pages/login/login'
-      })
+      workspace.relaunchWorkspaceHome(workspace.WORKSPACE_TYPES.SALES)
     }, 300)
   },
 
-  backToLogin() {
+  async backToLogin() {
     if (getCurrentPages().length > 1) {
       wx.navigateBack({ delta: 1 })
       return
     }
 
-    wx.switchTab({
-      url: '/pages/login/login'
-    })
+    const user = await auth.ensureLoggedIn()
+    await workspace.relaunchWorkspaceHome(user || workspace.WORKSPACE_TYPES.SALES)
   },
 
   setProfileState(user) {
     const district = user.district || ''
     this.setData({
+      roleText: workspace.getRoleText(user),
       grids: gridOptions.getGridsByDistrict(district),
       profileForm: {
         nickName: user.nickName || '',
         avatarUrl: user.avatarUrl || '',
         role: user.role || '',
+        workspaceType: workspace.getWorkspaceType(user),
         realName: user.realName || '',
         gridAccount: user.gridAccount || '',
         district,
         gridName: user.gridName || ''
       }
-    })
-    this.updateRoleText(user.role)
-  },
-
-  updateRoleText(role) {
-    const roleMap = {
-      sales_person: '销售师傅',
-      district_manager: '区县主管',
-      sales_department: '销售业务部'
-    }
-    this.setData({
-      roleText: roleMap[role] || '未知角色'
     })
   },
 

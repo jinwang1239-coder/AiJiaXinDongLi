@@ -3,7 +3,15 @@
 
 <scroll-view class="page-container" scroll-y type="list" bindscrolltolower="onReachBottom">
   <view class="manage-container">
-    
+    <view wx:if="{{workspaceType === 'line_project'}}" class="card line-project-entry">
+      <view class="card-header">
+        <view class="card-title">集客线路项目</view>
+        <view class="tag tag-primary">新模块</view>
+      </view>
+      <view class="card-content">进入集客开通、维护、计次及线路类工单的导入、统计与可视化页面。</view>
+      <button class="btn btn-primary line-project-btn" bindtap="navigateToLineProject">进入项目看板</button>
+    </view>
+
     <!-- 统计卡片 -->
     <view class="card stats-overview">
       <view class="card-header">

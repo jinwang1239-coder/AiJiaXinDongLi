@@ -23,6 +23,12 @@ db.collection('users').createIndex({
 })
 
 db.collection('users').createIndex({
+  workspaceType: 1
+}, {
+  name: 'workspace_type_index'
+})
+
+db.collection('users').createIndex({
   createTime: -1
 }, {
   name: 'createTime_desc'
@@ -137,6 +143,30 @@ db.collection('salary_feedbacks').createIndex({
   name: 'createTime_desc'
 })
 
+db.collection('line_project_month_confirms').createIndex({
+  gridAccount: 1
+}, {
+  name: 'grid_account_index'
+})
+
+db.collection('line_project_month_confirms').createIndex({
+  settlementMonth: 1
+}, {
+  name: 'settlement_month_index'
+})
+
+db.collection('line_project_month_confirms').createIndex({
+  'submitter.openid': 1
+}, {
+  name: 'submitter_openid_index'
+})
+
+db.collection('line_project_month_confirms').createIndex({
+  createTime: -1
+}, {
+  name: 'createTime_desc'
+})
+
 db.collection('feedback_routes').createIndex({
   district: 1
 }, {
@@ -149,12 +179,69 @@ db.collection('feedback_routes').createIndex({
   name: 'status_index'
 })
 
+db.collection('line_project_records').createIndex({
+  settlementMonth: 1,
+  subCategory: 1,
+  district: 1
+}, {
+  name: 'line_project_scope_index'
+})
+
+db.collection('line_project_records').createIndex({
+  settlementMonth: 1,
+  gridAccount: 1
+}, {
+  name: 'line_project_grid_account_index'
+})
+
+db.collection('line_project_records').createIndex({
+  settlementMonth: 1,
+  workOrderKey: 1
+}, {
+  name: 'line_project_work_order_index'
+})
+
+db.collection('line_project_records').createIndex({
+  importBatchId: 1
+}, {
+  name: 'line_project_batch_index'
+})
+
+db.collection('line_project_import_batches').createIndex({
+  settlementMonth: 1,
+  subCategory: 1,
+  createTime: -1
+}, {
+  name: 'line_project_batch_scope_index'
+})
+
+db.collection('line_project_import_batches').createIndex({
+  batchNo: 1
+}, {
+  unique: true,
+  name: 'line_project_batch_no_unique'
+})
+
+db.collection('user_person_bindings').createIndex({
+  personKey: 1
+}, {
+  unique: true,
+  name: 'user_person_binding_person_key_unique'
+})
+
+db.collection('user_person_bindings').createIndex({
+  gridAccount: 1
+}, {
+  name: 'user_person_binding_grid_account_index'
+})
+
 db.collection('users').add({
   data: {
     openid: 'admin_openid_example',
     nickName: '系统管理员',
     avatarUrl: '',
     role: 'sales_department',
+    workspaceType: 'sales',
     status: 'active',
     phone: '13800138000',
     department: '销售部门',

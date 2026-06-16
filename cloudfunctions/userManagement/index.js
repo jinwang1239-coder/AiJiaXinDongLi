@@ -5,6 +5,10 @@ cloud.init({
 })
 
 const db = cloud.database()
+const WORKSPACE_TYPES = {
+  SALES: 'sales',
+  LINE_PROJECT: 'line_project'
+}
 
 exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
@@ -49,6 +53,7 @@ async function login(wxContext, data) {
       nickName: userInfo.nickName,
       avatarUrl: userInfo.avatarUrl,
       role: 'sales_person',
+      workspaceType: WORKSPACE_TYPES.SALES,
       status: 'active',
       district: '',
       gridName: '',
@@ -80,6 +85,10 @@ async function login(wxContext, data) {
       nickName: userInfo.nickName,
       avatarUrl: userInfo.avatarUrl,
       updateTime: now
+    }
+
+    if (currentUser.workspaceType && currentUser.workspaceType !== normalizedUser.workspaceType) {
+      updateData.workspaceType = normalizedUser.workspaceType
     }
 
     if (normalizedUser.profileCompleted && !currentUser.profileCompleted) {
@@ -144,6 +153,7 @@ async function updateProfile(wxContext, data = {}) {
       nickName: '',
       avatarUrl: '',
       role: 'sales_person',
+      workspaceType: WORKSPACE_TYPES.SALES,
       status: 'active',
       ...profileData,
       profileCompleted: true,
@@ -239,9 +249,11 @@ async function getUsersByRole(wxContext, data) {
 
 function normalizeUser(user) {
   const profileCompleted = !!user.profileCompleted || isProfileCompleted(user)
+  const workspaceType = normalizeWorkspaceType(user.workspaceType)
 
   return {
     ...user,
+    workspaceType,
     district: user.district || '',
     gridName: user.gridName || '',
     realName: user.realName || '',
@@ -258,5 +270,11 @@ function isProfileCompleted(user) {
     (user.district || '').trim() &&
     (user.gridName || '').trim()
   )
+}
+
+function normalizeWorkspaceType(workspaceType) {
+  return workspaceType === WORKSPACE_TYPES.LINE_PROJECT
+    ? WORKSPACE_TYPES.LINE_PROJECT
+    : WORKSPACE_TYPES.SALES
 }
 

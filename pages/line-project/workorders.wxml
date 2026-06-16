@@ -1,0 +1,156 @@
+<navigation-bar title="集客开通" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y bindscrolltolower="onReachBottom">
+  <view class="line-project-page">
+    <view class="card">
+      <view class="card-header">
+        <view class="card-title">集客开通汇总</view>
+        <button class="btn btn-secondary mini-btn" bindtap="applyFilters" loading="{{overviewLoading || loading}}">刷新</button>
+      </view>
+
+      <view class="filter-grid">
+        <view class="filter-item">
+          <text class="filter-label">结算月份</text>
+          <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
+            <view class="filter-value">{{filters.settlementMonth}}</view>
+          </picker>
+        </view>
+
+        <view class="filter-item">
+          <text class="filter-label">项目关键字</text>
+          <input class="filter-input" placeholder="客户名称或工单号" value="{{filters.keyword}}" bindinput="onKeywordInput" />
+        </view>
+      </view>
+
+      <view class="overview-hero-grid">
+        <view class="overview-tile primary-tile overview-amount-tile">
+          <view class="overview-value">￥{{overview.totalAmountText}}</view>
+          <view class="overview-label">本人集客开通酬金</view>
+        </view>
+        <view class="feedback-tile">
+          <view class="feedback-tile-header">
+            <view class="feedback-tile-title">确认反馈</view>
+            <view class="status-pill {{feedbackDecision.statusClass}}">{{feedbackDecision.statusText}}</view>
+          </view>
+          <view class="feedback-tile-desc">{{feedbackDecision.detailText}}</view>
+          <view wx:if="{{feedbackDecision.subText}}" class="feedback-tile-sub">{{feedbackDecision.subText}}</view>
+          <view class="feedback-action-row">
+            <button
+              class="feedback-action-btn"
+              bindtap="confirmMonth"
+              loading="{{confirming}}"
+            >
+              {{feedbackDecision.confirmButtonText}}
+            </button>
+            <button
+              class="feedback-action-btn feedback-action-btn-ghost"
+              bindtap="openFeedbackPage"
+            >
+              {{feedbackDecision.feedbackButtonText}}
+            </button>
+          </view>
+        </view>
+      </view>
+
+      <view class="overview-grid">
+        <view class="overview-tile">
+          <view class="overview-value">{{overview.totalWorkOrders}}</view>
+          <view class="overview-label">参与项目数</view>
+        </view>
+        <view class="overview-tile">
+          <view class="overview-value">{{overview.totalWorkOrders}}</view>
+          <view class="overview-label">参与工单数</view>
+        </view>
+        <view class="overview-tile">
+          <view class="overview-value">{{overview.totalRecords}}</view>
+          <view class="overview-label">明细条数</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="card-header">
+        <view class="card-title">工作量明细汇总</view>
+      </view>
+
+      <view class="group-list">
+        <view class="group-card" wx:for="{{overview.groupedWorkloads}}" wx:key="groupName">
+          <view class="group-head" data-group-name="{{item.groupName}}" bindtap="toggleOverviewGroup">
+            <view class="group-head-main">
+              <view class="group-title">{{item.groupName}}</view>
+              <view class="group-summary">{{item.summaryText}}</view>
+            </view>
+            <view class="group-toggle">{{item.expanded ? '收起' : '展开'}}</view>
+          </view>
+          <view wx:if="{{item.expanded}}" class="group-items compact-group-items">
+            <view class="group-item {{workItem.hasValue ? 'group-item-active' : ''}}" wx:for="{{item.items}}" wx:key="itemCode" wx:for-item="workItem">
+              <view class="group-item-name">{{workItem.itemName}}</view>
+              <view class="group-item-value">{{workItem.qtyText}}{{workItem.unit}}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="card-header">
+        <view class="card-title">参与项目列表</view>
+        <view class="tag tag-primary">共 {{total}} 条</view>
+      </view>
+
+      <view wx:if="{{records.length}}" class="list-block">
+        <view class="list-item" wx:for="{{records}}" wx:key="workOrderKey" data-work-order-key="{{item.workOrderKey}}" bindtap="openDetail">
+          <view class="item-main">
+            <view class="item-code">工单号：{{item.projectCode}}</view>
+            <view class="item-title">{{item.projectTitle}}</view>
+            <view class="item-sub">{{item.workloadSummary || '暂无工作量明细'}}</view>
+          </view>
+          <view class="item-side">
+            <view class="item-value">￥{{item.totalAmountText}}</view>
+            <view class="item-side-sub">{{item.recordCount}} 条明细</view>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="empty-text">当前月份暂无本人参与的集客开通项目</view>
+    </view>
+
+    <view wx:if="{{hasMore && records.length}}" class="load-text">{{loading ? '加载中...' : '上拉加载更多'}}</view>
+    <view wx:if="{{!hasMore && records.length}}" class="load-text">已加载全部项目</view>
+  </view>
+</scroll-view>
+
+<view wx:if="{{showDetail && detail}}" class="modal-mask" bindtap="closeDetail">
+  <view class="modal-panel" catchtap="true">
+    <view class="modal-header">
+      <view class="modal-title">工单详情</view>
+      <view class="modal-close" bindtap="closeDetail">×</view>
+    </view>
+
+    <scroll-view class="modal-scroll" scroll-y>
+      <view class="detail-summary">
+        <view class="detail-code">工单号：{{detail.summary.workOrderCode || '未识别工单号'}}</view>
+        <view class="detail-title">{{detail.summary.workOrderSubject || detail.summary.workOrderNameRaw}}</view>
+        <view class="detail-line">本人酬金：￥{{detail.summary.totalAmountText}}</view>
+        <view class="detail-line">业务量合计：{{detail.summary.businessQtyTotal}}</view>
+      </view>
+
+      <view class="group-list">
+        <view class="group-card" wx:for="{{detail.groupedWorkloads}}" wx:key="groupName">
+          <view class="group-head" data-group-name="{{item.groupName}}" bindtap="toggleDetailGroup">
+            <view class="group-head-main">
+              <view class="group-title">{{item.groupName}}</view>
+              <view class="group-summary">{{item.summaryText}}</view>
+            </view>
+            <view class="group-toggle">{{item.expanded ? '收起' : '展开'}}</view>
+          </view>
+          <view wx:if="{{item.expanded}}" class="group-items compact-group-items">
+            <view class="group-item {{workItem.hasValue ? 'group-item-active' : ''}}" wx:for="{{item.items}}" wx:key="itemCode" wx:for-item="workItem">
+              <view class="group-item-name">{{workItem.itemName}}</view>
+              <view class="group-item-value">{{workItem.qtyText}}{{workItem.unit}}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

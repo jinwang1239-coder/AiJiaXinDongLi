@@ -1,0 +1,157 @@
+<navigation-bar title="集客开通导入" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y>
+  <view class="line-project-page">
+    <view wx:if="{{!canImport}}" class="card">
+      <view class="card-title">当前角色没有导入权限</view>
+      <view class="card-content">仅区县主管和业务部门角色可以执行集客开通导入。</view>
+    </view>
+
+    <block wx:else>
+      <view class="card">
+        <view class="card-header">
+          <view class="card-title">导入条件</view>
+          <view class="tag tag-primary">{{filters.subCategory}}</view>
+        </view>
+
+        <view class="filter-grid single-grid">
+          <view class="filter-item">
+            <text class="filter-label">结算月份</text>
+            <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
+              <view class="filter-value">{{filters.settlementMonth}}</view>
+            </picker>
+          </view>
+        </view>
+
+        <view class="tip-text">
+          系统将按模板“按人员”工作表导入，并按姓名/区县自动识别网格通账号后落库。
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-header">
+          <view class="card-title">导入文件</view>
+        </view>
+
+        <view wx:if="{{importFile}}" class="file-panel">
+          <view class="file-name">{{importFile.name}}</view>
+          <view class="file-meta">大小 {{importFile.size || 0}} bytes</view>
+          <view class="action-row">
+            <button class="btn btn-secondary half-btn" bindtap="chooseImportFile">重新选择</button>
+            <button class="btn btn-secondary half-btn" bindtap="clearImportFile">清空</button>
+          </view>
+        </view>
+
+        <view wx:else class="empty-panel">
+          <view class="empty-text">请选择用于导入的 Excel 文件</view>
+          <button class="btn btn-primary full-btn" bindtap="chooseImportFile">选择文件</button>
+        </view>
+
+        <view class="action-row top-gap">
+          <button class="btn btn-primary half-btn" bindtap="previewImport" loading="{{previewing}}">预解析</button>
+          <button class="btn btn-success half-btn" bindtap="commitImport" loading="{{importing}}">正式导入</button>
+        </view>
+      </view>
+
+      <view wx:if="{{previewResult}}" class="card">
+        <view class="card-header">
+          <view class="card-title">预解析结果</view>
+          <view class="tag {{previewResult.hasBlockingErrors ? 'tag-warning' : 'tag-success'}}">
+            {{previewResult.hasBlockingErrors ? '存在阻断错误' : '可以导入'}}
+          </view>
+        </view>
+
+        <view class="stats-grid">
+          <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.totalRows}}</view>
+            <view class="stats-label">总行数</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.successRows}}</view>
+            <view class="stats-label">有效行</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.errorRows}}</view>
+            <view class="stats-label">阻断错误</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.warningRows}}</view>
+            <view class="stats-label">金额预警</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.totalGridAccounts}}</view>
+            <view class="stats-label">识别账号数</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number money">￥{{previewResult.summary.calculatedAmountTotal}}</view>
+            <view class="stats-label">系统重算酬金</view>
+          </view>
+        </view>
+
+        <view wx:if="{{previewResult.previewRows.length}}" class="section-block">
+          <view class="section-title">预览样例</view>
+          <view class="mini-list">
+            <view class="mini-item" wx:for="{{previewResult.previewRows}}" wx:key="rowNo">
+              <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName}} / {{item.gridAccount}}</view>
+              <view class="mini-sub">{{item.workOrderNameRaw}}</view>
+              <view class="mini-sub">{{item.workloadSummary || '暂无工作量摘要'}} · ￥{{item.calculatedAmount}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{previewResult.blockingErrors.length}}" class="section-block">
+          <view class="section-title warning-text">阻断错误</view>
+          <view class="mini-list">
+            <view class="mini-item warning-item" wx:for="{{previewResult.blockingErrors}}" wx:key="rowNo">
+              <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName || '未识别人员'}}</view>
+              <view class="mini-sub">{{item.workOrderNameRaw}}</view>
+              <view class="mini-sub" wx:for="{{item.messages}}" wx:key="*this">{{item}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{previewResult.warningRows.length}}" class="section-block">
+          <view class="section-title">金额预警</view>
+          <view class="mini-list">
+            <view class="mini-item" wx:for="{{previewResult.warningRows}}" wx:key="rowNo">
+              <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName}} / {{item.gridAccount}}</view>
+              <view class="mini-sub">{{item.workOrderNameRaw}}</view>
+              <view class="mini-sub">系统 ￥{{item.calculatedAmount}} / 表内 ￥{{item.excelFormulaAmount}} / 差异 ￥{{item.amountDiff}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{previewResult.validationSummary.sheetFound}}" class="section-block">
+          <view class="section-title">按线路校验</view>
+          <view class="mini-sub plain-text">
+            共 {{previewResult.validationSummary.totalWorkOrders}} 个工单，
+            匹配 {{previewResult.validationSummary.matchedCount}} 个，
+            差异 {{previewResult.validationSummary.mismatchCount}} 个。
+          </view>
+          <view wx:if="{{previewResult.validationSummary.mismatches.length}}" class="mini-list">
+            <view class="mini-item" wx:for="{{previewResult.validationSummary.mismatches}}" wx:key="workOrderKey">
+              <view class="mini-title">{{item.workOrderNameRaw}}</view>
+              <view class="mini-sub" wx:for="{{item.messages}}" wx:key="*this">{{item}}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-header">
+          <view class="card-title">导入批次</view>
+          <view class="tag tag-primary">{{batches.length}} 条</view>
+        </view>
+
+        <view wx:if="{{batches.length}}" class="mini-list">
+          <view class="mini-item" wx:for="{{batches}}" wx:key="batchNo">
+            <view class="mini-title">{{item.sourceFileName}}</view>
+            <view class="mini-sub">{{item.createTimeText}} · 状态 {{item.status}}</view>
+            <view class="mini-sub">成功 {{item.successRows}} 行，替换 {{item.replacedRows}} 行，酬金 ￥{{item.calculatedAmountTotalText}}</view>
+          </view>
+        </view>
+        <view wx:else class="empty-text">当前月份暂无导入批次</view>
+      </view>
+    </block>
+  </view>
+</scroll-view>

@@ -1,16 +1,16 @@
-<navigation-bar title="薪酬反馈" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="{{navTitle}}" back="{{true}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y type="list">
   <view class="feedback-container">
     <view class="card submit-card">
-      <view class="section-title">提出反馈</view>
+      <view class="section-title">{{sectionTitle}}</view>
       <view wx:if="{{profileCompleted}}" class="summary-block">
         <view class="summary-row">
-          <text class="summary-label">反馈月份</text>
+          <text class="summary-label">{{monthFieldLabel}}</text>
           <text class="summary-value">{{monthLabel}}</text>
         </view>
         <view class="summary-row">
-          <text class="summary-label">当月薪酬</text>
+          <text class="summary-label">{{amountFieldLabel}}</text>
           <text class="summary-value summary-money">￥{{monthCommission}}</text>
         </view>
       </view>
@@ -19,7 +19,7 @@
         <view class="form-label">疑问内容</view>
         <textarea
           class="form-textarea"
-          placeholder="请输入薪酬异议或疑问内容"
+          placeholder="{{textareaPlaceholder}}"
           maxlength="500"
           value="{{feedbackForm.content}}"
           bindinput="onContentInput"
@@ -36,19 +36,19 @@
         loading="{{submitting}}"
         disabled="{{!profileCompleted}}"
       >
-        提交反馈
+        {{submitButtonText}}
       </button>
     </view>
 
     <view class="card history-card">
-      <view class="section-title">历史反馈</view>
+      <view class="section-title">{{historyTitle}}</view>
       <view wx:if="{{myFeedbacks.length > 0}}" class="list-block">
         <view wx:for="{{myFeedbacks}}" wx:key="_id" class="feedback-item">
           <view class="item-header">
-            <view class="item-title">{{item.salaryMonth}} 薪酬反馈</view>
+            <view class="item-title">{{item.recordTitle}}</view>
             <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
           </view>
-          <view class="item-meta">当月薪酬：￥{{item.salaryAmountText}}</view>
+          <view class="item-meta">{{amountFieldLabel}}：￥{{item.salaryAmountText}}</view>
           <view class="item-content">{{item.content}}</view>
           <view class="review-grid">
             <view class="review-item">
@@ -67,7 +67,7 @@
     </view>
 
     <view wx:if="{{canApprove}}" class="card pending-card">
-      <view class="section-title">待审批反馈</view>
+      <view class="section-title">{{pendingTitle}}</view>
       <view wx:if="{{pendingFeedbacks.length > 0}}" class="list-block">
         <view wx:for="{{pendingFeedbacks}}" wx:key="_id" class="feedback-item">
           <view class="item-header">
@@ -75,7 +75,7 @@
             <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
           </view>
           <view class="item-meta">{{item.submitter.name}} · {{item.district}} · {{item.salaryMonth}}</view>
-          <view class="item-meta">当月薪酬：￥{{item.salaryAmountText}}</view>
+          <view class="item-meta">{{amountFieldLabel}}：￥{{item.salaryAmountText}}</view>
           <view class="item-content">{{item.content}}</view>
           <view class="action-row">
             <button
