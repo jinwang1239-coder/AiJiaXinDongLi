@@ -84,8 +84,5 @@
       </view>
     </view>
 
-    <view class="action-row">
-      <button class="btn btn-primary workorders-btn" bindtap="navigateToWorkOrders">查看我的工单</button>
-    </view>
   </view>
 </scroll-view>

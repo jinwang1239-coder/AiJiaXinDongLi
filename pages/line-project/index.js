@@ -331,21 +331,12 @@ Page({
   onCompositionTap(e) {
     const { subCategory = '' } = e.currentTarget.dataset || {}
     if (subCategory === lineProjectConfig.CURRENT_SUBCATEGORY) {
-      this.navigateToWorkOrders()
       return
     }
 
     wx.showToast({
       title: `${subCategory}后续开放`,
       icon: 'none'
-    })
-  },
-
-  navigateToWorkOrders() {
-    wx.navigateTo({
-      url: `/pages/line-project/workorders?${lineProjectConfig.buildQueryString({
-        settlementMonth: this.data.filters.settlementMonth
-      })}`
     })
   },
 
