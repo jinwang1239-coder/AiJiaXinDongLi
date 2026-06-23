@@ -162,7 +162,7 @@ function getExportColumns(userRole) {
   ]
   
   // 根据角色添加额外字段
-  if (userRole === 'sales_department') {
+  if (['sales_department', 'system_admin'].includes(userRole)) {
     baseColumns.splice(1, 0, { field: 'submitterName', title: '提交人' })
   }
   
@@ -203,6 +203,9 @@ function filterDataByRole(data, userRole, userId, userDistrict, userGridAccount 
     case 'sales_department':
       // 销售业务部可以看全部数据
       return data
+
+    case 'system_admin':
+      return data
     
     default:
       return []
@@ -242,7 +245,7 @@ function generateFilename(userRole, userDistrict = '') {
  * @returns {boolean} 是否有导出权限
  */
 function checkExportPermission(userRole) {
-  const allowedRoles = ['sales_person', 'district_manager', 'sales_department']
+  const allowedRoles = ['sales_person', 'district_manager', 'sales_department', 'system_admin']
   return allowedRoles.includes(userRole)
 }
 

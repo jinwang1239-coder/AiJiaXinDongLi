@@ -27,29 +27,6 @@
           <view class="overview-value">￥{{overview.totalAmountText}}</view>
           <view class="overview-label">本人集客开通酬金</view>
         </view>
-        <view class="feedback-tile">
-          <view class="feedback-tile-header">
-            <view class="feedback-tile-title">确认反馈</view>
-            <view class="status-pill {{feedbackDecision.statusClass}}">{{feedbackDecision.statusText}}</view>
-          </view>
-          <view class="feedback-tile-desc">{{feedbackDecision.detailText}}</view>
-          <view wx:if="{{feedbackDecision.subText}}" class="feedback-tile-sub">{{feedbackDecision.subText}}</view>
-          <view class="feedback-action-row">
-            <button
-              class="feedback-action-btn"
-              bindtap="confirmMonth"
-              loading="{{confirming}}"
-            >
-              {{feedbackDecision.confirmButtonText}}
-            </button>
-            <button
-              class="feedback-action-btn feedback-action-btn-ghost"
-              bindtap="openFeedbackPage"
-            >
-              {{feedbackDecision.feedbackButtonText}}
-            </button>
-          </view>
-        </view>
       </view>
 
       <view class="overview-grid">

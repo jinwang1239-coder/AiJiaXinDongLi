@@ -9,8 +9,20 @@ cloud.init({
 
 const db = cloud.database()
 const _ = db.command
+const SYSTEM_ADMIN_ROLE = 'system_admin'
+const SYSTEM_ADMIN_PROFILE = {
+  realName: '王谨',
+  gridAccount: '15871165073'
+}
 const IMPORT_TEMPLATE_HEADERS = ['办理时间', '网格通账号', '发展人员网格通', '业务名称', '业务号码']
 const MAX_QUERY_LIMIT = 100
+
+function isSystemAdmin(user = {}) {
+  return user.role === SYSTEM_ADMIN_ROLE || (
+    String(user.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
+    String(user.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
+  )
+}
 
 function toNumber(value) {
   const number = Number(value || 0)
@@ -593,7 +605,7 @@ async function batchImportBusinessRecords(wxContext, data = {}) {
   }
 
   const importer = userQuery.data[0]
-  if (!['district_manager', 'sales_department'].includes(importer.role)) {
+  if (!['district_manager', 'sales_department'].includes(importer.role) && !isSystemAdmin(importer)) {
     return {
       success: false,
       error: '仅区县主管或销售业务部可批量导入'
@@ -971,7 +983,7 @@ async function exportData(wxContext, event) {
   const user = userQuery.data[0]
   
   // 权限验证 - 只有管理员可以导出数据
-  if (!['district_manager', 'sales_department', 'sales_person'].includes(user.role)) {
+  if (!['district_manager', 'sales_department', 'sales_person'].includes(user.role) && !isSystemAdmin(user)) {
     return {
       success: false,
       error: '权限不足'

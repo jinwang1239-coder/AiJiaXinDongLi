@@ -30,7 +30,12 @@ const WORKSPACE_TYPES = {
   LINE_PROJECT: 'line_project'
 }
 
-const MANAGER_ROLES = ['district_manager', 'sales_department']
+const SYSTEM_ADMIN_ROLE = 'system_admin'
+const SYSTEM_ADMIN_PROFILE = {
+  realName: '王谨',
+  gridAccount: '15871165073'
+}
+const MANAGER_ROLES = ['district_manager', 'sales_department', SYSTEM_ADMIN_ROLE]
 const MAX_QUERY_LIMIT = 100
 const SUMMARY_SUBCATEGORIES = [
   '集客开通',
@@ -123,14 +128,25 @@ function normalizeWorkspaceType(workspaceType) {
     : WORKSPACE_TYPES.SALES
 }
 
+function isSystemAdmin(user = {}) {
+  return user.role === SYSTEM_ADMIN_ROLE || (
+    String(user.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
+    String(user.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
+  )
+}
+
 function ensureLineProjectWorkspace(user = {}) {
+  if (isSystemAdmin(user)) {
+    return
+  }
+
   if (normalizeWorkspaceType(user.workspaceType) !== WORKSPACE_TYPES.LINE_PROJECT) {
     throw new Error('当前账号未开通集客线路项目工作台')
   }
 }
 
 function ensureManagerRole(user = {}) {
-  if (!MANAGER_ROLES.includes(user.role)) {
+  if (!MANAGER_ROLES.includes(user.role) && !isSystemAdmin(user)) {
     throw new Error('当前角色没有导入权限')
   }
 }
@@ -1165,7 +1181,7 @@ function buildFilterQuery(filters = {}) {
 }
 
 function buildRoleScopeCondition(user = {}) {
-  if (user.role === 'sales_department') {
+  if (user.role === 'sales_department' || isSystemAdmin(user)) {
     return null
   }
 

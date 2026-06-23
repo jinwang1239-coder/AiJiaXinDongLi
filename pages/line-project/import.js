@@ -3,6 +3,8 @@ const lineProjectService = require('../../utils/line-project-service')
 const lineProjectConfig = require('../../utils/line-project-config')
 const workspace = require('../../utils/workspace')
 
+const MANAGER_ROLES = ['district_manager', 'sales_department', 'system_admin']
+
 Page({
   data: {
     userRole: '',
@@ -49,7 +51,7 @@ Page({
       return null
     }
 
-    const canImport = ['district_manager', 'sales_department'].includes(user.role)
+    const canImport = MANAGER_ROLES.includes(user.role)
     this.setData({
       userRole: user.role || '',
       canImport

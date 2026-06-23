@@ -9,6 +9,11 @@ const WORKSPACE_TYPES = {
   SALES: 'sales',
   LINE_PROJECT: 'line_project'
 }
+const SYSTEM_ADMIN_ROLE = 'system_admin'
+const SYSTEM_ADMIN_PROFILE = {
+  realName: '王谨',
+  gridAccount: '15871165073'
+}
 
 exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
@@ -91,6 +96,10 @@ async function login(wxContext, data) {
       updateData.workspaceType = normalizedUser.workspaceType
     }
 
+    if (currentUser.role !== normalizedUser.role) {
+      updateData.role = normalizedUser.role
+    }
+
     if (normalizedUser.profileCompleted && !currentUser.profileCompleted) {
       updateData.profileCompleted = true
       updateData.profileCompletedTime = currentUser.profileCompletedTime || now
@@ -152,7 +161,7 @@ async function updateProfile(wxContext, data = {}) {
       openid,
       nickName: '',
       avatarUrl: '',
-      role: 'sales_person',
+      role: getUserRole(profileData),
       workspaceType: WORKSPACE_TYPES.SALES,
       status: 'active',
       ...profileData,
@@ -178,6 +187,10 @@ async function updateProfile(wxContext, data = {}) {
   const currentUser = userQuery.data[0]
   const updateData = {
     ...profileData,
+    role: getUserRole({
+      ...currentUser,
+      ...profileData
+    }),
     profileCompleted: true,
     profileCompletedTime: currentUser.profileCompletedTime || now,
     updateTime: now
@@ -228,7 +241,7 @@ async function getUsersByRole(wxContext, data) {
   const { role } = data
   const currentUser = await db.collection('users').where({ openid }).get()
 
-  if (currentUser.data.length === 0 || !['district_manager', 'sales_department'].includes(currentUser.data[0].role)) {
+  if (currentUser.data.length === 0 || !['district_manager', 'sales_department', SYSTEM_ADMIN_ROLE].includes(normalizeUser(currentUser.data[0]).role)) {
     return {
       success: false,
       error: '权限不足'
@@ -250,9 +263,11 @@ async function getUsersByRole(wxContext, data) {
 function normalizeUser(user) {
   const profileCompleted = !!user.profileCompleted || isProfileCompleted(user)
   const workspaceType = normalizeWorkspaceType(user.workspaceType)
+  const role = getUserRole(user)
 
   return {
     ...user,
+    role,
     workspaceType,
     district: user.district || '',
     gridName: user.gridName || '',
@@ -276,5 +291,16 @@ function normalizeWorkspaceType(workspaceType) {
   return workspaceType === WORKSPACE_TYPES.LINE_PROJECT
     ? WORKSPACE_TYPES.LINE_PROJECT
     : WORKSPACE_TYPES.SALES
+}
+
+function isSystemAdminProfile(user = {}) {
+  return (
+    String(user.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
+    String(user.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
+  )
+}
+
+function getUserRole(user = {}) {
+  return isSystemAdminProfile(user) ? SYSTEM_ADMIN_ROLE : (user.role || 'sales_person')
 }
 

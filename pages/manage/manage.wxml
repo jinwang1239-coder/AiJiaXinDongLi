@@ -218,7 +218,7 @@
               </button>
               
               <button 
-                wx:if="{{userRole === 'sales_department' || (userRole === 'sales_person' && (item.userId === currentOpenid || item.gridAccount === userGridAccount))}}"
+                wx:if="{{userRole === 'sales_department' || userRole === 'system_admin' || (userRole === 'sales_person' && (item.userId === currentOpenid || item.gridAccount === userGridAccount))}}"
                 class="action-btn delete-btn" 
                 data-index="{{index}}"
                 bindtap="deleteRecord"

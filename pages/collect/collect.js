@@ -5,6 +5,7 @@ const productConfig = require('../../utils/product-config')
 const storage = require('../../utils/storage')
 const workspace = require('../../utils/workspace')
 
+const MANAGER_ROLES = ['district_manager', 'sales_department', 'system_admin']
 const DISTRICTS = [
   '监利',
   '洪湖',
@@ -169,7 +170,7 @@ Page({
       userRole: user.role || null,
       currentUserGridAccount: user.gridAccount || '',
       currentUserDistrict: user.district || '',
-      canBatchImport: ['district_manager', 'sales_department'].includes(user.role)
+      canBatchImport: MANAGER_ROLES.includes(user.role)
     }
 
     if (user.gridAccount && !this.data.formData.gridAccount) {
@@ -466,7 +467,7 @@ Page({
       return
     }
 
-    if (!['district_manager', 'sales_department'].includes(user.role)) {
+    if (!MANAGER_ROLES.includes(user.role)) {
       wx.showToast({
         title: '当前角色无导入权限',
         icon: 'none'

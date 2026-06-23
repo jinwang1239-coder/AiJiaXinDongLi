@@ -58,6 +58,30 @@
           <view class="summary-stat-label">明细条数</view>
         </view>
       </view>
+
+      <view class="summary-feedback">
+        <view class="summary-feedback-header">
+          <view class="summary-feedback-title">确认反馈</view>
+          <view class="status-pill {{feedbackDecision.statusClass}}">{{feedbackDecision.statusText}}</view>
+        </view>
+        <view class="summary-feedback-desc">{{feedbackDecision.detailText}}</view>
+        <view wx:if="{{feedbackDecision.subText}}" class="summary-feedback-sub">{{feedbackDecision.subText}}</view>
+        <view class="summary-feedback-actions">
+          <button
+            class="summary-feedback-btn"
+            bindtap="confirmMonth"
+            loading="{{confirming}}"
+          >
+            {{feedbackDecision.confirmButtonText}}
+          </button>
+          <button
+            class="summary-feedback-btn summary-feedback-btn-ghost"
+            bindtap="navigateToFeedback"
+          >
+            {{feedbackDecision.feedbackButtonText}}
+          </button>
+        </view>
+      </view>
     </view>
 
     <view class="action-row">

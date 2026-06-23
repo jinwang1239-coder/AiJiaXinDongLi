@@ -3,6 +3,12 @@ const lineProjectService = require('../../utils/line-project-service')
 const lineProjectConfig = require('../../utils/line-project-config')
 const workspace = require('../../utils/workspace')
 
+const FEEDBACK_CONTEXT = {
+  workspaceType: workspace.WORKSPACE_TYPES.LINE_PROJECT,
+  scene: 'line_project_workorders'
+}
+const MANAGER_ROLES = ['district_manager', 'sales_department', 'system_admin']
+
 function isProfileCompleted(user) {
   return !!user && !!(
     String(user.realName || '').trim() &&
@@ -10,6 +16,104 @@ function isProfileCompleted(user) {
     String(user.district || '').trim() &&
     String(user.gridName || '').trim()
   )
+}
+
+function getFeedbackStatusText(status) {
+  const statusMap = {
+    pending: '反馈待处理',
+    processing: '反馈处理中',
+    approved: '反馈已通过',
+    rejected: '反馈已驳回'
+  }
+
+  return statusMap[status] || '待确认'
+}
+
+function getStatusClass(status) {
+  const statusClassMap = {
+    pending: 'status-pending',
+    processing: 'status-processing',
+    approved: 'status-approved',
+    rejected: 'status-rejected'
+  }
+
+  return statusClassMap[status] || 'status-pending'
+}
+
+function buildDefaultFeedbackDecision(settlementMonth) {
+  return {
+    settlementMonth,
+    statusText: '待确认',
+    statusClass: 'status-pending',
+    detailText: '本月酬金核对无误可签字确认，如有疑问请提交问题反馈。',
+    subText: '',
+    canConfirm: true,
+    canFeedback: true,
+    confirmBlockedReason: '',
+    feedbackBlockedReason: '',
+    confirmButtonText: '签字确认',
+    feedbackButtonText: '问题反馈'
+  }
+}
+
+function buildFeedbackDecisionState({ settlementMonth, profileCompleted, confirmRecord, feedbackRecord }) {
+  const state = buildDefaultFeedbackDecision(settlementMonth)
+  state.canConfirm = !!profileCompleted
+  state.canFeedback = !!profileCompleted
+
+  if (!profileCompleted) {
+    state.statusText = '待完善资料'
+    state.detailText = '请先完善个人信息后再签字确认或提交问题反馈。'
+    state.canConfirm = false
+    state.canFeedback = false
+    state.confirmBlockedReason = '请先完善个人信息'
+    state.feedbackBlockedReason = '请先完善个人信息'
+    return state
+  }
+
+  if (confirmRecord) {
+    state.statusText = '已签字确认'
+    state.statusClass = 'status-approved'
+    state.detailText = confirmRecord.confirmTimeText
+      ? `已于 ${confirmRecord.confirmTimeText} 完成签字确认。`
+      : '本月酬金已完成签字确认。'
+    state.subText = `确认金额：￥${lineProjectConfig.formatMoney(confirmRecord.amount)}`
+    state.canConfirm = false
+    state.canFeedback = false
+    state.confirmBlockedReason = '本月已完成签字确认'
+    state.feedbackBlockedReason = '本月已完成签字确认'
+    state.confirmButtonText = '已签字确认'
+    return state
+  }
+
+  if (!feedbackRecord) {
+    return state
+  }
+
+  state.statusText = getFeedbackStatusText(feedbackRecord.status)
+  state.statusClass = getStatusClass(feedbackRecord.status)
+  state.subText = feedbackRecord.createTimeText ? `提交时间：${feedbackRecord.createTimeText}` : ''
+
+  if (feedbackRecord.status === 'pending') {
+    state.detailText = '问题反馈已提交，等待审批处理后可继续签字确认。'
+    state.canConfirm = false
+    state.canFeedback = false
+    state.confirmBlockedReason = '当前存在待处理反馈'
+    state.feedbackBlockedReason = '当前存在待处理反馈'
+    return state
+  }
+
+  if (feedbackRecord.status === 'processing') {
+    state.detailText = '问题反馈正在处理中，暂不能签字确认或重复反馈。'
+    state.canConfirm = false
+    state.canFeedback = false
+    state.confirmBlockedReason = '当前反馈正在处理中'
+    state.feedbackBlockedReason = '当前反馈正在处理中'
+    return state
+  }
+
+  state.detailText = '最近一次问题反馈已处理完成，若无异议可继续签字确认。'
+  return state
 }
 
 function buildCompositionDisplay(composition = []) {
@@ -48,6 +152,7 @@ function buildDefaultOverview(settlementMonth) {
 Page({
   data: {
     loading: false,
+    confirming: false,
     roleText: '',
     profileDisplayName: '',
     profileSubtitle: '',
@@ -59,7 +164,8 @@ Page({
       majorCategory: lineProjectConfig.CURRENT_MAJOR_CATEGORY,
       subCategory: lineProjectConfig.CURRENT_SUBCATEGORY
     },
-    overview: buildDefaultOverview(lineProjectConfig.getDefaultSettlementMonth())
+    overview: buildDefaultOverview(lineProjectConfig.getDefaultSettlementMonth()),
+    feedbackDecision: buildDefaultFeedbackDecision(lineProjectConfig.getDefaultSettlementMonth())
   },
 
   onLoad(options = {}) {
@@ -71,12 +177,14 @@ Page({
         majorCategory: lineProjectConfig.CURRENT_MAJOR_CATEGORY,
         subCategory: lineProjectConfig.CURRENT_SUBCATEGORY
       },
-      overview: buildDefaultOverview(settlementMonth)
+      overview: buildDefaultOverview(settlementMonth),
+      feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
     })
   },
 
   onShow() {
     this.loadOverview()
+    this.loadFeedbackDecision()
   },
 
   async ensureLogin() {
@@ -99,7 +207,7 @@ Page({
       profileDisplayName: user.realName || user.nickName || '未命名用户',
       profileSubtitle: [user.district, user.gridName, user.gridAccount].filter(Boolean).join(' / ') || '集客开通酬金工作台',
       profileCompleted: isProfileCompleted(user),
-      canImport: ['district_manager', 'sales_department'].includes(user.role)
+      canImport: MANAGER_ROLES.includes(user.role)
     })
     return user
   },
@@ -150,17 +258,74 @@ Page({
     }
   },
 
+  async loadFeedbackDecision() {
+    const user = await this.ensureLogin()
+    if (!user) {
+      return
+    }
+
+    try {
+      const settlementMonth = this.data.filters.settlementMonth
+      const [confirmData, feedbackResult] = await Promise.all([
+        lineProjectService.callLineProject('getMonthConfirmStatus', {
+          settlementMonth
+        }),
+        wx.cloud.callFunction({
+          name: 'salaryFeedback',
+          data: {
+            action: 'getSceneSummary',
+            data: {
+              ...FEEDBACK_CONTEXT,
+              salaryMonth: settlementMonth
+            }
+          }
+        })
+      ])
+
+      if (!feedbackResult.result || !feedbackResult.result.success) {
+        throw new Error((feedbackResult.result && feedbackResult.result.error) || '反馈状态加载失败')
+      }
+
+      this.setData({
+        feedbackDecision: buildFeedbackDecisionState({
+          settlementMonth,
+          profileCompleted: !!confirmData.profileCompleted,
+          confirmRecord: confirmData.record || null,
+          feedbackRecord: (feedbackResult.result.data && feedbackResult.result.data.record) || null
+        })
+      })
+    } catch (error) {
+      console.error('加载确认反馈状态失败:', error)
+      this.setData({
+        feedbackDecision: buildFeedbackDecisionState({
+          settlementMonth: this.data.filters.settlementMonth,
+          profileCompleted: this.data.profileCompleted,
+          confirmRecord: null,
+          feedbackRecord: null
+        })
+      })
+      wx.showToast({
+        title: error.message || '状态加载失败',
+        icon: 'none'
+      })
+    }
+  },
+
   onMonthChange(e) {
     const settlementMonth = (e.detail.value || '').slice(0, 7)
     this.setData({
       monthPickerValue: e.detail.value,
       'filters.settlementMonth': settlementMonth,
-      overview: buildDefaultOverview(settlementMonth)
+      overview: buildDefaultOverview(settlementMonth),
+      feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
+    }, () => {
+      this.refreshOverview()
     })
   },
 
   refreshOverview() {
     this.loadOverview()
+    this.loadFeedbackDecision()
   },
 
   onCompositionTap(e) {
@@ -184,19 +349,60 @@ Page({
     })
   },
 
+  showDecisionBlocked(reason) {
+    wx.showToast({
+      title: reason || '当前不可操作',
+      icon: 'none'
+    })
+  },
+
+  async confirmMonth() {
+    if (!this.data.feedbackDecision.canConfirm) {
+      this.showDecisionBlocked(this.data.feedbackDecision.confirmBlockedReason)
+      return
+    }
+
+    wx.showModal({
+      title: '签字确认',
+      content: `确认 ${this.data.filters.settlementMonth} 本人总酬金无误并完成签字确认吗？`,
+      success: async res => {
+        if (!res.confirm) {
+          return
+        }
+
+        try {
+          this.setData({ confirming: true })
+          await lineProjectService.callLineProject('confirmMonth', {
+            settlementMonth: this.data.filters.settlementMonth
+          })
+          wx.showToast({
+            title: '签字确认成功',
+            icon: 'success'
+          })
+          await this.loadFeedbackDecision()
+        } catch (error) {
+          console.error('签字确认失败:', error)
+          wx.showToast({
+            title: error.message || '签字确认失败',
+            icon: 'none'
+          })
+        } finally {
+          this.setData({ confirming: false })
+        }
+      }
+    })
+  },
+
   navigateToFeedback() {
-    if (!this.data.profileCompleted) {
-      wx.showToast({
-        title: '请先完善个人信息',
-        icon: 'none'
-      })
+    if (!this.data.feedbackDecision.canFeedback) {
+      this.showDecisionBlocked(this.data.feedbackDecision.feedbackBlockedReason)
       return
     }
 
     wx.navigateTo({
       url: `/pages/feedback/feedback?${lineProjectConfig.buildQueryString({
-        workspaceType: workspace.WORKSPACE_TYPES.LINE_PROJECT,
-        scene: 'line_project_workorders',
+        workspaceType: FEEDBACK_CONTEXT.workspaceType,
+        scene: FEEDBACK_CONTEXT.scene,
         salaryMonth: this.data.filters.settlementMonth,
         salaryAmount: this.data.overview.summary.totalAmount
       })}`

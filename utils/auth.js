@@ -28,6 +28,18 @@ function syncUserToApp(user) {
   }
 }
 
+function normalizeUser(user = {}) {
+  const isSystemAdmin = workspace.isSystemAdmin(user)
+  const currentWorkspaceType = isSystemAdmin ? workspace.getPreferredWorkspaceType() : workspace.getWorkspaceType(user)
+
+  return {
+    ...user,
+    role: isSystemAdmin ? workspace.SYSTEM_ADMIN_ROLE : user.role,
+    workspaceType: currentWorkspaceType,
+    currentWorkspaceType
+  }
+}
+
 function getUserProfile() {
   return new Promise((resolve, reject) => {
     wx.getUserProfile({
@@ -58,7 +70,7 @@ function getCurrentUserInfo() {
       throw new Error(res.result.error || '获取用户信息失败')
     }
 
-    const user = res.result.data
+    const user = normalizeUser(res.result.data)
     syncUserToApp(user)
     return user
   })
@@ -76,7 +88,7 @@ function updateProfile(data) {
       throw new Error(res.result.error || '更新个人信息失败')
     }
 
-    const user = res.result.data
+    const user = normalizeUser(res.result.data)
     syncUserToApp(user)
     return user
   })
@@ -150,14 +162,11 @@ function login() {
           throw new Error(res.result.error || '登录失败')
         }
 
-        const userData = res.result.data.user
+        const userData = normalizeUser(res.result.data.user)
         syncUserToApp(userData)
         resolve({
           userInfo: getApp().globalData.userInfo,
-          user: {
-            ...userData,
-            workspaceType: workspace.getWorkspaceType(userData)
-          },
+          user: userData,
           isNewUser: !!res.result.data.isNewUser
         })
       })

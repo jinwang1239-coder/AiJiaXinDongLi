@@ -79,18 +79,23 @@ App({
       (user.gridName || '').trim()
     )
 
+    const currentWorkspaceType = workspace.getWorkspaceType(user)
+    const userRole = workspace.isSystemAdmin(user) ? workspace.SYSTEM_ADMIN_ROLE : (user.role || null)
+
     this.globalData.userInfo = {
       nickName: user.nickName || '',
       avatarUrl: user.avatarUrl || ''
     }
-    this.globalData.userRole = user.role || null
-    this.globalData.workspaceType = workspace.getWorkspaceType(user)
+    this.globalData.userRole = userRole
+    this.globalData.workspaceType = currentWorkspaceType
     this.globalData.hasUserInfo = true
     this.globalData.openid = user.openid || ''
     this.globalData.profileCompleted = profileCompleted
     this.globalData.userProfile = {
       ...user,
-      workspaceType: workspace.getWorkspaceType(user),
+      role: userRole,
+      workspaceType: currentWorkspaceType,
+      currentWorkspaceType,
       profileCompleted
     }
   }

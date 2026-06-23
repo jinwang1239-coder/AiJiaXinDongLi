@@ -58,8 +58,7 @@
   gap: 18rpx;
 }
 
-.workspace-btn,
-.half-btn {
+.workspace-btn {
   flex: 1;
 }
 
@@ -203,26 +202,107 @@
   opacity: 0.9;
 }
 
+.summary-feedback {
+  margin-top: 24rpx;
+  padding: 22rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8rpx);
+}
+
+.summary-feedback-header,
+.summary-feedback-actions {
+  display: flex;
+  align-items: center;
+}
+
+.summary-feedback-header {
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.summary-feedback-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120rpx;
+  height: 44rpx;
+  padding: 0 14rpx;
+  border-radius: 24rpx;
+  font-size: 22rpx;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.status-pending {
+  background: rgba(255, 255, 255, 0.9);
+  color: #5f6b7a;
+}
+
+.status-processing {
+  background: #e8f3ff;
+  color: #1f8df3;
+}
+
+.status-approved {
+  background: #e8f8ef;
+  color: #1d8f54;
+}
+
+.status-rejected {
+  background: #ffecec;
+  color: #d64c4c;
+}
+
+.summary-feedback-desc {
+  margin-top: 14rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.summary-feedback-sub {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.summary-feedback-actions {
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.summary-feedback-btn {
+  flex: 1;
+  min-width: 0;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: 16rpx;
+  border: none;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.summary-feedback-btn-ghost {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.summary-feedback-btn::after {
+  border: none;
+}
+
 .action-row {
   margin-top: 8rpx;
-}
-
-.summary-action-row {
-  margin-top: 24rpx;
-}
-
-.half-btn {
-  height: 84rpx;
-}
-
-.feedback-entry-btn {
-  background: rgba(255, 255, 255, 0.9);
-  color: #123249;
-  border: none;
-}
-
-.feedback-entry-btn::after {
-  border: none;
 }
 
 .mini-btn {
