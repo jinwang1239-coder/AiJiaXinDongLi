@@ -27,7 +27,7 @@ const FEEDBACK_CONTEXTS = {
     amountFieldLabel: '本人酬金',
     submitButtonText: '提交反馈',
     textareaPlaceholder: '请输入本月酬金疑问或反馈说明',
-    recordTitleSuffix: '集客开通酬金反馈'
+    recordTitleSuffix: '集客线路酬金反馈'
   }
 }
 
@@ -59,8 +59,10 @@ Page({
     monthLabel: getCurrentMonthLabel(),
     monthCommission: '0.00',
     feedbackForm: {
-      content: ''
+      content: '',
+      workOrderIndex: 0
     },
+    workOrderOptions: [{ label: '整月薪酬', workOrderKey: '' }],
     myFeedbacks: [],
     pendingFeedbacks: []
   },
@@ -134,7 +136,8 @@ Page({
       pending: '待处理',
       processing: '处理中',
       approved: '已通过',
-      rejected: '已驳回'
+      rejected: '已驳回',
+      not_required: '无需审批'
     }
 
     return statusMap[status] || '待处理'
@@ -145,7 +148,8 @@ Page({
       pending: 'status-pending',
       processing: 'status-processing',
       approved: 'status-approved',
-      rejected: 'status-rejected'
+      rejected: 'status-rejected',
+      not_required: 'status-pending'
     }
 
     return statusClassMap[status] || 'status-pending'
@@ -249,14 +253,26 @@ Page({
   },
 
   async loadLineProjectSummary() {
-    const data = await lineProjectService.callLineProject('getMyOverview', {
-      filters: {
-        settlementMonth: this.data.monthLabel
-      }
-    })
+    const filters = { settlementMonth: this.data.monthLabel }
+    const [data, workOrders] = await Promise.all([
+      lineProjectService.callLineProject('getMyOverview', { filters }),
+      lineProjectService.callLineProject('listMyWorkOrders', {
+        filters,
+        page: 1,
+        pageSize: 100
+      })
+    ])
 
     this.setData({
-      monthCommission: this.formatMoney(data.summary && data.summary.totalAmount)
+      monthCommission: this.formatMoney(data.summary && data.summary.totalAmount),
+      workOrderOptions: [
+        { label: '整月薪酬', workOrderKey: '' },
+        ...(workOrders.records || []).map(item => ({
+          label: `${item.subCategory || ''} ${item.workOrderCode || '未识别工单号'} ${item.workOrderSubject || item.workOrderNameRaw}`,
+          workOrderKey: item.workOrderKey
+        }))
+      ],
+      'feedbackForm.workOrderIndex': 0
     })
   },
 
@@ -350,6 +366,10 @@ Page({
     })
   },
 
+  onWorkOrderChange(e) {
+    this.setData({ 'feedbackForm.workOrderIndex': Number(e.detail.value || 0) })
+  },
+
   async submitFeedback() {
     const content = String(this.data.feedbackForm.content || '').trim()
     if (!this.data.profileCompleted) {
@@ -367,11 +387,13 @@ Page({
       await this.callFeedbackFunction('create', this.buildFeedbackPayload({
         salaryMonth: this.data.monthLabel,
         salaryAmount: Number(this.data.monthCommission),
+        relatedWorkOrderKey: (this.data.workOrderOptions[this.data.feedbackForm.workOrderIndex] || {}).workOrderKey || '',
         content
       }))
 
       this.setData({
-        'feedbackForm.content': ''
+        'feedbackForm.content': '',
+        'feedbackForm.workOrderIndex': 0
       })
       wx.showToast({
         title: '反馈已提交',
@@ -401,10 +423,18 @@ Page({
     const actionText = action === 'approved' ? '通过' : '驳回'
 
     wx.showModal({
-      title: '确认审批',
-      content: `确认${actionText}这条反馈吗？`,
+      title: `确认${actionText}`,
+      content: '',
+      editable: true,
+      placeholderText: action === 'rejected' ? '请输入驳回原因（必填）' : '处理意见（选填）',
       success: async res => {
         if (!res.confirm) {
+          return
+        }
+
+        const reviewNote = String(res.content || '').trim()
+        if (action === 'rejected' && !reviewNote) {
+          wx.showToast({ title: '请填写驳回原因', icon: 'none' })
           return
         }
 
@@ -412,7 +442,8 @@ Page({
           this.setData({ reviewing: true })
           await this.callFeedbackFunction('review', {
             feedbackId: id,
-            action
+            action,
+            reviewNote
           })
 
           wx.showToast({

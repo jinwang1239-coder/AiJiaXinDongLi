@@ -3,8 +3,6 @@ const lineProjectService = require('../../utils/line-project-service')
 const lineProjectConfig = require('../../utils/line-project-config')
 const workspace = require('../../utils/workspace')
 
-const MANAGER_ROLES = ['district_manager', 'sales_department', 'system_admin']
-
 Page({
   data: {
     userRole: '',
@@ -12,12 +10,12 @@ Page({
     monthPickerValue: lineProjectConfig.toMonthPickerValue(),
     filters: {
       settlementMonth: lineProjectConfig.getDefaultSettlementMonth(),
-      majorCategory: lineProjectConfig.CURRENT_MAJOR_CATEGORY,
-      subCategory: lineProjectConfig.CURRENT_SUBCATEGORY
+      subCategory: '全部模块'
     },
     importFile: null,
     uploadState: null,
     previewResult: null,
+    importProgress: null,
     batches: [],
     previewing: false,
     importing: false,
@@ -51,7 +49,8 @@ Page({
       return null
     }
 
-    const canImport = MANAGER_ROLES.includes(user.role)
+    const access = await lineProjectService.callLineProject('getAccessProfile')
+    const canImport = !!access.canImport
     this.setData({
       userRole: user.role || '',
       canImport
@@ -71,7 +70,8 @@ Page({
   resetPreviewState() {
     this.setData({
       uploadState: null,
-      previewResult: null
+      previewResult: null,
+      importProgress: null
     })
   },
 
@@ -127,7 +127,7 @@ Page({
       throw new Error('请先选择 Excel 文件')
     }
 
-    const safeName = (file.name || 'jkkt-import.xlsx').replace(/[^\w.\-\u4e00-\u9fa5]/g, '_')
+    const safeName = (file.name || 'jkxl-import.xlsx').replace(/[^\w.\-\u4e00-\u9fa5]/g, '_')
     const uploadResult = await wx.cloud.uploadFile({
       cloudPath: `line_project_imports/${Date.now()}_${safeName}`,
       filePath: file.path
@@ -165,9 +165,16 @@ Page({
         fileName: uploaded.fileName,
         settlementMonth: this.data.filters.settlementMonth
       })
+      previewResult.pendingClaimAccounts = previewResult.pendingClaimAccounts || []
+      previewResult.moduleSummaries = (previewResult.moduleSummaries || []).map(item => ({
+        ...item,
+        businessQtyText: item.subCategory === lineProjectConfig.CURRENT_SUBCATEGORY
+          ? '分项工作量'
+          : `业务量 ${Number(item.businessQtyTotal || 0)}`
+      }))
       this.setData({ previewResult })
     } catch (error) {
-      console.error('集客开通预解析失败:', error)
+      console.error('集客线路预解析失败:', error)
       wx.showToast({
         title: error.message || '预解析失败',
         icon: 'none'
@@ -202,7 +209,7 @@ Page({
 
     wx.showModal({
       title: '确认导入',
-      content: '系统将按“结算月份 + 集客开通 + 导入区县”覆盖旧数据，确认继续？',
+      content: '系统将把该结算月份的5个模块数据整体替换为当前文件，并保留旧版本供回滚，确认继续？',
       success: async (res) => {
         if (!res.confirm) {
           return
@@ -210,12 +217,44 @@ Page({
 
         try {
           this.setData({ importing: true })
-          wx.showLoading({ title: '正在导入...' })
-          const result = await lineProjectService.callLineProject('importCommit', {
+          wx.showLoading({ title: '创建导入批次...' })
+          const start = await lineProjectService.callLineProject('importStart', {
             fileID: this.data.uploadState.fileID,
             fileName: this.data.uploadState.fileName,
             settlementMonth: this.data.filters.settlementMonth
           })
+          this.setData({
+            importProgress: start.status === 'published' ? null : {
+              batchNo: start.batchNo,
+              writtenRows: start.writtenRows || 0,
+              totalRows: start.totalRows || 0
+            }
+          })
+          let result = { summary: start.summary }
+          if (start.status !== 'published') {
+            if (start.status === 'processing') {
+              const completed = new Set(start.completedChunks || [])
+              for (let chunkIndex = 0; chunkIndex < start.totalChunks; chunkIndex += 1) {
+                if (completed.has(chunkIndex)) continue
+                wx.showLoading({ title: `正在导入 ${chunkIndex + 1}/${start.totalChunks}` })
+                const progress = await lineProjectService.callLineProject('importWriteChunk', {
+                  batchNo: start.batchNo,
+                  chunkIndex
+                })
+                this.setData({
+                  importProgress: {
+                    batchNo: start.batchNo,
+                    writtenRows: progress.writtenRows,
+                    totalRows: progress.totalRows
+                  }
+                })
+              }
+            }
+            wx.showLoading({ title: '正在校验发布...' })
+            result = await lineProjectService.callLineProject('importFinalize', {
+              batchNo: start.batchNo
+            })
+          }
 
           wx.showToast({
             title: `导入成功 ${result.summary.successRows} 条`,
@@ -225,11 +264,12 @@ Page({
           this.setData({
             importFile: null,
             uploadState: null,
-            previewResult: null
+            previewResult: null,
+            importProgress: null
           })
           this.loadBatches()
         } catch (error) {
-          console.error('集客开通导入失败:', error)
+          console.error('集客线路导入失败:', error)
           wx.showToast({
             title: error.message || '正式导入失败',
             icon: 'none'
@@ -259,7 +299,8 @@ Page({
       this.setData({
         batches: (data.records || []).map(item => ({
           ...item,
-          calculatedAmountTotalText: lineProjectConfig.formatMoney(item.calculatedAmountTotal)
+          importedAmountTotalText: lineProjectConfig.formatMoney(item.importedAmountTotal || item.excelAmountTotal),
+          canRollback: item.status === 'published' && item.isActive && !!item.previousBatchNo
         }))
       })
     } catch (error) {
@@ -267,5 +308,24 @@ Page({
     } finally {
       this.setData({ loadingBatches: false })
     }
+  },
+
+  rollbackBatch(e) {
+    const batchNo = e.currentTarget.dataset.batchNo
+    if (!batchNo) return
+    wx.showModal({
+      title: '确认回滚',
+      content: '回滚后当前批次数据将停止展示，并恢复上一批次数据。确认继续？',
+      success: async res => {
+        if (!res.confirm) return
+        try {
+          await lineProjectService.callLineProject('rollbackImportBatch', { batchNo })
+          wx.showToast({ title: '已回滚', icon: 'success' })
+          this.loadBatches()
+        } catch (error) {
+          wx.showToast({ title: error.message || '回滚失败', icon: 'none' })
+        }
+      }
+    })
   }
 })

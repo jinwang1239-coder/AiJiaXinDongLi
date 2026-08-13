@@ -10,10 +10,7 @@ const WORKSPACE_TYPES = {
   LINE_PROJECT: 'line_project'
 }
 const SYSTEM_ADMIN_ROLE = 'system_admin'
-const SYSTEM_ADMIN_PROFILE = {
-  realName: '王谨',
-  gridAccount: '15871165073'
-}
+const MAX_QUERY_LIMIT = 100
 
 exports.main = async (event) => {
   const wxContext = cloud.getWXContext()
@@ -80,6 +77,9 @@ async function login(wxContext, data) {
     }
   } else {
     const currentUser = userQuery.data[0]
+    if (currentUser.status === 'inactive') {
+      throw new Error('当前账号已停用')
+    }
     const now = new Date()
     const normalizedUser = normalizeUser({
       ...currentUser,
@@ -155,6 +155,20 @@ async function updateProfile(wxContext, data = {}) {
 
   const userQuery = await db.collection('users').where({ openid }).get()
   const now = new Date()
+  const currentUser = userQuery.data[0] || {}
+  if (currentUser.gridAccount && currentUser.gridAccount !== profileData.gridAccount) {
+    const boundRecords = await getBoundLineProjectRecords(openid)
+    if (boundRecords.length) {
+      throw new Error('当前账号已认领集客线路数据，不能自行修改网格通账号，请联系管理员处理')
+    }
+  }
+  const pendingClaimRecords = await getPendingLineProjectRecords(profileData.gridAccount)
+  validatePendingClaimIdentity(pendingClaimRecords, profileData)
+  const lineProjectAccess = await resolveLineProjectAccess({
+    ...currentUser,
+    ...profileData,
+    hasLineProjectData: pendingClaimRecords.length > 0 || currentUser.workspaceType === WORKSPACE_TYPES.LINE_PROJECT
+  })
 
   if (userQuery.data.length === 0) {
     const newUser = {
@@ -162,7 +176,9 @@ async function updateProfile(wxContext, data = {}) {
       nickName: '',
       avatarUrl: '',
       role: getUserRole(profileData),
-      workspaceType: WORKSPACE_TYPES.SALES,
+      workspaceType: lineProjectAccess.workspaceType,
+      lineProjectRoles: lineProjectAccess.lineProjectRoles,
+      managedDistricts: lineProjectAccess.managedDistricts,
       status: 'active',
       ...profileData,
       profileCompleted: true,
@@ -174,23 +190,30 @@ async function updateProfile(wxContext, data = {}) {
     const createResult = await db.collection('users').add({
       data: newUser
     })
+    const claimedRecords = await claimLineProjectRecords(pendingClaimRecords, {
+      _id: createResult._id,
+      ...newUser
+    }, now)
 
     return {
       success: true,
       data: normalizeUser({
         _id: createResult._id,
-        ...newUser
+        ...newUser,
+        lineProjectClaimedRecords: claimedRecords
       })
     }
   }
 
-  const currentUser = userQuery.data[0]
   const updateData = {
     ...profileData,
     role: getUserRole({
       ...currentUser,
       ...profileData
     }),
+    workspaceType: lineProjectAccess.workspaceType,
+    lineProjectRoles: lineProjectAccess.lineProjectRoles,
+    managedDistricts: lineProjectAccess.managedDistricts,
     profileCompleted: true,
     profileCompletedTime: currentUser.profileCompletedTime || now,
     updateTime: now
@@ -209,14 +232,167 @@ async function updateProfile(wxContext, data = {}) {
   if (updatedCount === 0) {
     throw new Error('个人信息保存失败，请稍后重试')
   }
+  const claimedRecords = await claimLineProjectRecords(pendingClaimRecords, {
+    ...currentUser,
+    ...updateData
+  }, now)
 
   return {
     success: true,
     data: normalizeUser({
       ...currentUser,
-      ...updateData
+      ...updateData,
+      lineProjectClaimedRecords: claimedRecords
     })
   }
+}
+
+async function fetchAllRecords(query) {
+  const records = []
+  let offset = 0
+  while (true) {
+    const result = await query.skip(offset).limit(MAX_QUERY_LIMIT).get()
+    const page = result.data || []
+    records.push(...page)
+    if (page.length < MAX_QUERY_LIMIT) return records
+    offset += page.length
+  }
+}
+
+async function getPendingLineProjectRecords(gridAccount) {
+  try {
+    const records = await fetchAllRecords(db.collection('line_project_records').where({ gridAccount }))
+    const versions = await getActiveVersionMap()
+    return records.filter(record => record.bindingStatus === 'pending_claim' && (
+      versions[record.settlementMonth]
+        ? record.importBatchId === versions[record.settlementMonth]
+        : !['superseded', 'rolled_back', 'staged', 'versioned'].includes(record.publishStatus)
+    ))
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) return []
+    throw error
+  }
+}
+
+async function getBoundLineProjectRecords(openid) {
+  try {
+    const records = await fetchAllRecords(db.collection('line_project_records').where({ userOpenid: openid }))
+    const versions = await getActiveVersionMap()
+    return records.filter(record => record.bindingStatus === 'bound' && (
+      versions[record.settlementMonth]
+        ? record.importBatchId === versions[record.settlementMonth]
+        : !['superseded', 'rolled_back', 'staged', 'versioned'].includes(record.publishStatus)
+    )).slice(0, 1)
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) return []
+    throw error
+  }
+}
+
+async function getActiveVersionMap() {
+  try {
+    const versions = await fetchAllRecords(db.collection('line_project_active_versions'))
+    return versions.reduce((map, version) => {
+      if (version.settlementMonth && version.activeBatchNo) map[version.settlementMonth] = version.activeBatchNo
+      return map
+    }, {})
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) return {}
+    throw error
+  }
+}
+
+function validatePendingClaimIdentity(records = [], profile = {}) {
+  if (!records.length) return
+  const names = [...new Set(records.map(record => String(record.personName || '').trim()).filter(Boolean))]
+  const districts = [...new Set(records.map(record => String(record.district || '').trim()).filter(Boolean))]
+  if (names.length !== 1 || names[0] !== profile.realName) {
+    throw new Error(`该网格通账号的待认领数据姓名为${names.join('、') || '空'}，与当前填写姓名不一致`)
+  }
+  if (districts.length !== 1 || districts[0] !== profile.district) {
+    throw new Error(`该网格通账号的待认领数据区县为${districts.join('、') || '空'}，与当前选择区县不一致`)
+  }
+}
+
+async function claimLineProjectRecords(records = [], user = {}, now = new Date()) {
+  for (const record of records) {
+    await db.collection('line_project_records').doc(record._id).update({
+      data: {
+        userOpenid: user.openid,
+        boundUserId: user._id || '',
+        bindingStatus: 'bound',
+        bindingSource: 'auto_profile',
+        boundTime: now,
+        updateTime: now
+      }
+    })
+  }
+  return records.length
+}
+
+async function resolveLineProjectAccess(user = {}) {
+  const gridAccount = String(user.gridAccount || '').trim()
+  const roles = new Set()
+  const managedDistricts = new Set()
+
+  if (user.role === 'district_manager' && user.district) {
+    roles.add('district_manager')
+    managedDistricts.add(user.district)
+  }
+
+  if (gridAccount) {
+    try {
+      const [supervisorResult, managerResult] = await Promise.all([
+        db.collection('feedback_routes').where({
+          'supervisor.gridAccount': gridAccount
+        }).get(),
+        db.collection('feedback_routes').where({
+          'districtManager.gridAccount': gridAccount
+        }).get()
+      ])
+
+      ;(supervisorResult.data || [])
+        .filter(route => (
+          route.status !== 'inactive' &&
+          route.district === user.district &&
+          (!route.supervisor.name || String(route.supervisor.name).trim() === String(user.realName || '').trim())
+        ))
+        .forEach(route => {
+          roles.add('district_supervisor')
+          if (route.district) managedDistricts.add(route.district)
+        })
+      ;(managerResult.data || [])
+        .filter(route => (
+          route.status !== 'inactive' &&
+          route.district === user.district &&
+          (!route.districtManager.name || String(route.districtManager.name).trim() === String(user.realName || '').trim())
+        ))
+        .forEach(route => {
+          roles.add('district_manager')
+          if (route.district) managedDistricts.add(route.district)
+        })
+    } catch (error) {
+      if (!isCollectionNotFoundError(error)) throw error
+    }
+  }
+
+  const isAdmin = getUserRole(user) === SYSTEM_ADMIN_ROLE
+  return {
+    workspaceType: isAdmin || roles.size > 0 || user.hasLineProjectData
+      ? WORKSPACE_TYPES.LINE_PROJECT
+      : normalizeWorkspaceType(user.workspaceType),
+    lineProjectRoles: [...roles],
+    managedDistricts: [...managedDistricts].sort()
+  }
+}
+
+function isCollectionNotFoundError(error) {
+  const message = String((error && error.message) || error || '')
+  return (
+    message.includes('database collection not exists') ||
+    message.includes('Db or Table not exist') ||
+    message.includes('ResourceNotFound')
+  )
 }
 
 async function getUserInfo(wxContext) {
@@ -262,8 +438,10 @@ async function getUsersByRole(wxContext, data) {
 
 function normalizeUser(user) {
   const profileCompleted = !!user.profileCompleted || isProfileCompleted(user)
-  const workspaceType = normalizeWorkspaceType(user.workspaceType)
   const role = getUserRole(user)
+  const workspaceType = role === SYSTEM_ADMIN_ROLE
+    ? WORKSPACE_TYPES.LINE_PROJECT
+    : normalizeWorkspaceType(user.workspaceType)
 
   return {
     ...user,
@@ -293,14 +471,12 @@ function normalizeWorkspaceType(workspaceType) {
     : WORKSPACE_TYPES.SALES
 }
 
-function isSystemAdminProfile(user = {}) {
-  return (
-    String(user.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
-    String(user.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
-  )
+function getUserRole(user = {}) {
+  return user.role || 'sales_person'
 }
 
-function getUserRole(user = {}) {
-  return isSystemAdminProfile(user) ? SYSTEM_ADMIN_ROLE : (user.role || 'sales_person')
+module.exports.__test__ = {
+  validatePendingClaimIdentity,
+  claimLineProjectRecords
 }
 

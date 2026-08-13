@@ -1,17 +1,17 @@
-<navigation-bar title="集客开通导入" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="集客线路导入" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y>
   <view class="line-project-page">
     <view wx:if="{{!canImport}}" class="card">
       <view class="card-title">当前角色没有导入权限</view>
-      <view class="card-content">仅区县主管和业务部门角色可以执行集客开通导入。</view>
+      <view class="card-content">仅集客线路管理员或系统管理员可以执行五模块导入、发布和回滚。</view>
     </view>
 
     <block wx:else>
       <view class="card">
         <view class="card-header">
           <view class="card-title">导入条件</view>
-          <view class="tag tag-primary">{{filters.subCategory}}</view>
+          <view class="tag tag-primary">五模块统一导入</view>
         </view>
 
         <view class="filter-grid single-grid">
@@ -24,7 +24,7 @@
         </view>
 
         <view class="tip-text">
-          系统将按模板“按人员”工作表导入，并按姓名/区县自动识别网格通账号后落库。
+          系统一次读取集客开通、集客维护、集客计次、杆路维护、抢修配置5个工作表，按网格通账号精确匹配用户并分别解析发布。
         </view>
       </view>
 
@@ -50,6 +50,9 @@
         <view class="action-row top-gap">
           <button class="btn btn-primary half-btn" bindtap="previewImport" loading="{{previewing}}">预解析</button>
           <button class="btn btn-success half-btn" bindtap="commitImport" loading="{{importing}}">正式导入</button>
+        </view>
+        <view wx:if="{{importProgress}}" class="import-progress">
+          已写入 {{importProgress.writtenRows}} / {{importProgress.totalRows}} 行；失败后再次点击“正式导入”可继续。
         </view>
       </view>
 
@@ -83,18 +86,52 @@
             <view class="stats-label">识别账号数</view>
           </view>
           <view class="stats-tile">
+            <view class="stats-number">{{previewResult.summary.boundAccounts}}</view>
+            <view class="stats-label">已绑定账号</view>
+          </view>
+          <view class="stats-tile pending-tile">
+            <view class="stats-number">{{previewResult.summary.pendingClaimAccounts}}</view>
+            <view class="stats-label">待认领账号</view>
+          </view>
+          <view class="stats-tile">
+            <view class="stats-number money">￥{{previewResult.summary.importedAmountTotal}}</view>
+            <view class="stats-label">导入薪酬</view>
+          </view>
+          <view class="stats-tile">
             <view class="stats-number money">￥{{previewResult.summary.calculatedAmountTotal}}</view>
-            <view class="stats-label">系统重算酬金</view>
+            <view class="stats-label">金额核对合计</view>
+          </view>
+        </view>
+
+        <view class="section-block">
+          <view class="section-title">分模块汇总</view>
+          <view class="mini-list">
+            <view class="mini-item" wx:for="{{previewResult.moduleSummaries}}" wx:key="subCategory">
+              <view class="mini-title">{{item.subCategory}}</view>
+              <view class="mini-sub">有效 {{item.successRows}} 行 · 待认领 {{item.pendingClaimRows}} 行 · 错误 {{item.errorRows}} 行 · {{item.businessQtyText}} · 薪酬 ￥{{item.importedAmountTotal}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{previewResult.pendingClaimAccounts.length}}" class="section-block">
+          <view class="section-title pending-text">待员工登录认领</view>
+          <view class="mini-sub plain-text">以下账号尚未注册，不影响本次导入；员工完善同名、同区县的个人资料后将自动认领。</view>
+          <view class="mini-list top-gap">
+            <view class="mini-item pending-item" wx:for="{{previewResult.pendingClaimAccounts}}" wx:key="gridAccount">
+              <view class="mini-title">{{item.personName}} / {{item.gridAccount}}</view>
+              <view class="mini-sub">{{item.district}} · {{item.recordCount}} 条 · ￥{{item.totalAmount}}</view>
+            </view>
           </view>
         </view>
 
         <view wx:if="{{previewResult.previewRows.length}}" class="section-block">
           <view class="section-title">预览样例</view>
           <view class="mini-list">
-            <view class="mini-item" wx:for="{{previewResult.previewRows}}" wx:key="rowNo">
-              <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName}} / {{item.gridAccount}}</view>
+            <view class="mini-item" wx:for="{{previewResult.previewRows}}" wx:key="previewKey">
+              <view class="mini-title">{{item.subCategory}} · 第 {{item.rowNo}} 行 · {{item.personName}} / {{item.gridAccount}}</view>
+              <view class="mini-sub">{{item.bindingStatus === 'pending_claim' ? '待员工登录认领' : '已绑定系统用户'}}</view>
               <view class="mini-sub">{{item.workOrderNameRaw}}</view>
-              <view class="mini-sub">{{item.workloadSummary || '暂无工作量摘要'}} · ￥{{item.calculatedAmount}}</view>
+              <view class="mini-sub">{{item.workloadSummary || '暂无工作量摘要'}} · 导入 ￥{{item.importedAmount}}</view>
             </view>
           </view>
         </view>
@@ -102,7 +139,7 @@
         <view wx:if="{{previewResult.blockingErrors.length}}" class="section-block">
           <view class="section-title warning-text">阻断错误</view>
           <view class="mini-list">
-            <view class="mini-item warning-item" wx:for="{{previewResult.blockingErrors}}" wx:key="rowNo">
+            <view class="mini-item warning-item" wx:for="{{previewResult.blockingErrors}}" wx:key="errorKey">
               <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName || '未识别人员'}}</view>
               <view class="mini-sub">{{item.workOrderNameRaw}}</view>
               <view class="mini-sub" wx:for="{{item.messages}}" wx:key="*this">{{item}}</view>
@@ -113,10 +150,10 @@
         <view wx:if="{{previewResult.warningRows.length}}" class="section-block">
           <view class="section-title">金额预警</view>
           <view class="mini-list">
-            <view class="mini-item" wx:for="{{previewResult.warningRows}}" wx:key="rowNo">
+            <view class="mini-item" wx:for="{{previewResult.warningRows}}" wx:key="previewKey">
               <view class="mini-title">第 {{item.rowNo}} 行 · {{item.personName}} / {{item.gridAccount}}</view>
               <view class="mini-sub">{{item.workOrderNameRaw}}</view>
-              <view class="mini-sub">系统 ￥{{item.calculatedAmount}} / 表内 ￥{{item.excelFormulaAmount}} / 差异 ￥{{item.amountDiff}}</view>
+              <view class="mini-sub">系统 ￥{{item.calculatedAmount}} / 导入 ￥{{item.importedAmount}} / 差异 ￥{{item.amountDiff}}</view>
             </view>
           </view>
         </view>
@@ -146,8 +183,9 @@
         <view wx:if="{{batches.length}}" class="mini-list">
           <view class="mini-item" wx:for="{{batches}}" wx:key="batchNo">
             <view class="mini-title">{{item.sourceFileName}}</view>
-            <view class="mini-sub">{{item.createTimeText}} · 状态 {{item.status}}</view>
-            <view class="mini-sub">成功 {{item.successRows}} 行，替换 {{item.replacedRows}} 行，酬金 ￥{{item.calculatedAmountTotalText}}</view>
+            <view class="mini-sub">{{item.createTimeText}} · 状态 {{item.status}}{{item.isActive ? '（当前生效）' : ''}} · 进度 {{item.writtenRows || 0}}/{{item.totalRows}}</view>
+            <view class="mini-sub">成功 {{item.successRows}} 行，导入时待认领 {{item.pendingClaimRows || 0}} 行，替换 {{item.replacedRows}} 行，导入薪酬 ￥{{item.importedAmountTotalText}}</view>
+            <button wx:if="{{item.canRollback}}" class="btn btn-secondary mini-btn" data-batch-no="{{item.batchNo}}" bindtap="rollbackBatch">回滚该批次</button>
           </view>
         </view>
         <view wx:else class="empty-text">当前月份暂无导入批次</view>

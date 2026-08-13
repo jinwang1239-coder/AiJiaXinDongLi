@@ -195,10 +195,26 @@ db.collection('line_project_records').createIndex({
 })
 
 db.collection('line_project_records').createIndex({
+  gridAccount: 1,
+  bindingStatus: 1,
+  publishStatus: 1
+}, {
+  name: 'line_project_claim_index'
+})
+
+db.collection('line_project_records').createIndex({
   settlementMonth: 1,
   workOrderKey: 1
 }, {
   name: 'line_project_work_order_index'
+})
+
+db.collection('line_project_records').createIndex({
+  settlementMonth: 1,
+  userOpenid: 1,
+  publishStatus: 1
+}, {
+  name: 'line_project_user_publish_index'
 })
 
 db.collection('line_project_records').createIndex({
@@ -215,6 +231,27 @@ db.collection('line_project_import_batches').createIndex({
   name: 'line_project_batch_scope_index'
 })
 
+db.collection('line_project_audit_logs').createIndex({
+  action: 1,
+  createTime: -1
+}, {
+  name: 'line_project_audit_action_index'
+})
+
+db.collection('line_project_audit_logs').createIndex({
+  'operator.openid': 1,
+  createTime: -1
+}, {
+  name: 'line_project_audit_operator_index'
+})
+
+db.collection('line_project_import_batches').createIndex({
+  status: 1,
+  createTime: -1
+}, {
+  name: 'line_project_batch_status_index'
+})
+
 db.collection('line_project_import_batches').createIndex({
   batchNo: 1
 }, {
@@ -222,32 +259,17 @@ db.collection('line_project_import_batches').createIndex({
   name: 'line_project_batch_no_unique'
 })
 
-db.collection('user_person_bindings').createIndex({
-  personKey: 1
+db.collection('line_project_active_versions').createIndex({
+  settlementMonth: 1
 }, {
   unique: true,
-  name: 'user_person_binding_person_key_unique'
+  name: 'line_project_active_month_unique'
 })
 
-db.collection('user_person_bindings').createIndex({
-  gridAccount: 1
+db.collection('line_project_active_versions').createIndex({
+  activeBatchNo: 1
 }, {
-  name: 'user_person_binding_grid_account_index'
-})
-
-db.collection('users').add({
-  data: {
-    openid: 'admin_openid_example',
-    nickName: '系统管理员',
-    avatarUrl: '',
-    role: 'sales_department',
-    workspaceType: 'sales',
-    status: 'active',
-    phone: '13800138000',
-    department: '销售部门',
-    createTime: new Date(),
-    updateTime: new Date()
-  }
+  name: 'line_project_active_batch_index'
 })
 
 console.log('数据库初始化完成')

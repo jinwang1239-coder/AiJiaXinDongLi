@@ -1,5 +1,85 @@
-<navigation-bar title="页面跳转中" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="集客线路数据看板" color="black" background="#FFF"></navigation-bar>
 
-<view class="page-container">
-  <view class="empty-text">正在跳转到我的工单...</view>
+<scroll-view class="page-container" scroll-y>
+  <view class="manage-page">
+    <view wx:if="{{!canAccess}}" class="card empty-text">当前账号没有区县数据查看权限</view>
+
+    <block wx:else>
+      <view class="card filter-card">
+        <view class="scope-text">数据范围：{{managedDistrictsText}}</view>
+        <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
+          <view class="month-picker">{{filters.settlementMonth}}</view>
+        </picker>
+        <picker range="{{subCategoryOptions}}" value="{{subCategoryIndex}}" bindchange="onSubCategoryChange">
+          <view class="month-picker">{{subCategoryOptions[subCategoryIndex]}}</view>
+        </picker>
+        <view class="search-row">
+          <input class="search-input" placeholder="工单、项目、姓名或网格通账号" value="{{filters.keyword}}" bindinput="onKeywordInput" bindconfirm="search" />
+          <button class="btn btn-primary search-btn" bindtap="search" loading="{{loading}}">查询</button>
+        </view>
+      </view>
+
+      <view class="stats-grid">
+        <view class="stat-card primary"><view class="stat-value">￥{{stats.totalAmountText}}</view><view class="stat-label">导入薪酬</view></view>
+        <view class="stat-card"><view class="stat-value">{{stats.totalWorkOrders}}</view><view class="stat-label">工单数</view></view>
+        <view class="stat-card"><view class="stat-value">{{stats.totalPeople}}</view><view class="stat-label">人员数</view></view>
+        <view class="stat-card"><view class="stat-value">{{stats.totalBusinessQty}}</view><view class="stat-label">标准业务量</view></view>
+        <view class="stat-card"><view class="stat-value">{{stats.mismatchCount}}</view><view class="stat-label">金额预警</view></view>
+      </view>
+
+      <view class="card">
+        <view class="toolbar">
+          <view class="tabs">
+            <view class="tab {{viewMode === 'workorder' ? 'active' : ''}}" data-mode="workorder" bindtap="switchView">按工单</view>
+            <view class="tab {{viewMode === 'person' ? 'active' : ''}}" data-mode="person" bindtap="switchView">按人员</view>
+          </view>
+          <button class="btn btn-secondary mini-btn" bindtap="exportData" loading="{{exporting}}">导出</button>
+        </view>
+
+        <view wx:if="{{records.length}}" class="data-list">
+          <view wx:for="{{records}}" wx:key="itemKey" class="data-item" data-key="{{item.itemKey}}" bindtap="openDetail">
+            <view class="item-main">
+              <view class="item-title">{{viewMode === 'person' ? item.personName : (item.workOrderSubject || item.workOrderNameRaw)}}</view>
+              <view wx:if="{{viewMode !== 'person'}}" class="item-sub">{{item.subCategory}}</view>
+              <view class="item-sub" wx:if="{{viewMode === 'person'}}">{{item.gridAccount}} · {{item.workOrderCount}} 个工单 · {{item.recordCount}} 条明细 · 业务量 {{item.businessQtyTotal}}</view>
+              <view class="item-sub" wx:else>工单号 {{item.workOrderCode || '未识别'}} · {{item.participantCount}} 人参与</view>
+              <view wx:if="{{viewMode !== 'person'}}" class="item-sub">{{item.workloadSummaryText}}</view>
+              <view class="item-sub">{{item.districtText}}</view>
+            </view>
+            <view class="item-amount">￥{{item.totalAmountText}}</view>
+          </view>
+        </view>
+        <view wx:else class="empty-text">当前条件暂无已发布数据</view>
+      </view>
+    </block>
+  </view>
+</scroll-view>
+
+<view wx:if="{{detail}}" class="modal-mask" bindtap="closeDetail">
+  <view class="detail-modal" catchtap="stopPropagation">
+    <view class="detail-header">
+      <view class="detail-title">{{detail.personView ? detail.summary.personName : (detail.summary.workOrderSubject || detail.summary.workOrderNameRaw)}}</view>
+      <view class="close" bindtap="closeDetail">×</view>
+    </view>
+    <view class="detail-total">合计 ￥{{detail.summary.totalAmountText}}</view>
+    <view wx:if="{{!detail.personView}}" class="workload-row">{{detail.summary.detailMetaText}}</view>
+    <scroll-view class="detail-scroll" scroll-y>
+      <view wx:if="{{detail.personView}}">
+        <view wx:for="{{detail.workOrders}}" wx:key="workOrderKey" class="detail-row">
+          <view>
+            <view>{{item.subCategory}} · {{item.workOrderSubject || item.workOrderNameRaw}}</view>
+            <view class="workload-row">{{item.workloadSummaryText}}</view>
+          </view>
+          <view>￥{{item.totalAmountText}}</view>
+        </view>
+      </view>
+      <view wx:else>
+        <view wx:for="{{detail.participants}}" wx:key="personKey" class="participant-card">
+          <view class="detail-row"><view>{{item.personName}} / {{item.gridAccount}}</view><view>￥{{item.amountText}}</view></view>
+          <view wx:if="{{item.businessQty}}" class="workload-row">业务量：{{item.businessQty}} {{item.endpoint}} {{item.siteLevel}}</view>
+          <view wx:for="{{item.workloadItems}}" wx:key="itemCode" class="workload-row">{{item.itemName}}：{{item.qty}}{{item.unit}} × ￥{{item.unitPriceText}} = ￥{{item.amountText}}</view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
 </view>

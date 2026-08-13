@@ -10,18 +10,11 @@ cloud.init({
 const db = cloud.database()
 const _ = db.command
 const SYSTEM_ADMIN_ROLE = 'system_admin'
-const SYSTEM_ADMIN_PROFILE = {
-  realName: '王谨',
-  gridAccount: '15871165073'
-}
 const IMPORT_TEMPLATE_HEADERS = ['办理时间', '网格通账号', '发展人员网格通', '业务名称', '业务号码']
 const MAX_QUERY_LIMIT = 100
 
 function isSystemAdmin(user = {}) {
-  return user.role === SYSTEM_ADMIN_ROLE || (
-    String(user.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
-    String(user.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
-  )
+  return user.role === SYSTEM_ADMIN_ROLE
 }
 
 function toNumber(value) {

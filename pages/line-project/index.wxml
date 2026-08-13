@@ -1,4 +1,4 @@
-<navigation-bar title="集客开通酬金" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="集客线路酬金" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y>
   <view class="line-project-page">
@@ -8,12 +8,18 @@
         <view class="workspace-subtitle">{{roleText}}</view>
         <view class="workspace-meta">{{profileSubtitle}}</view>
       </view>
+
       <view class="workspace-actions">
         <button class="btn btn-secondary mini-btn workspace-btn" bindtap="openProfile">个人信息</button>
         <button class="btn btn-secondary mini-btn workspace-btn ghost-btn" bindtap="onLogout">退出登录</button>
       </view>
-      <view wx:if="{{canImport}}" class="workspace-admin">
+      <view wx:if="{{canImport}}" class="workspace-admin workspace-admin-row">
         <button class="btn btn-secondary admin-import-btn" bindtap="navigateToImport">管理员导入</button>
+        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToManagement">全市数据看板</button>
+      </view>
+      <view wx:elif="{{canManage}}" class="workspace-admin">
+        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToManagement">本区县数据看板</button>
+        <view wx:if="{{managedDistrictsText}}" class="workspace-meta">管理范围：{{managedDistrictsText}}</view>
       </view>
     </view>
 
@@ -25,18 +31,95 @@
       <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
         <view class="month-picker">{{filters.settlementMonth}}</view>
       </picker>
-      <view class="month-tip">当前模块固定为 {{filters.subCategory}}</view>
+      <view class="month-tip">展示集客开通、集客维护、集客计次、杆路维护、抢修配置五个模块</view>
     </view>
 
-    <view class="card summary-card">
-      <view class="summary-label">本月总酬金</view>
+    <view wx:if="{{canManage}}" class="card management-card">
+      <view class="management-header">
+        <view>
+          <view class="management-title">{{managementScopeTitle}}</view>
+          <view class="management-scope">{{managementScopeText}}</view>
+        </view>
+        <view class="management-month">{{managementOverview.settlementMonth}}</view>
+      </view>
+
+      <view class="management-total-label">导入薪酬</view>
+      <view class="management-total">￥{{managementOverview.totalAmountText}}</view>
+      <view class="management-stats">
+        <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalWorkOrders}}</view><view class="management-stat-label">工单数</view></view>
+        <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalPeople}}</view><view class="management-stat-label">人员数</view></view>
+        <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalRecords}}</view><view class="management-stat-label">明细数</view></view>
+        <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalBusinessQty}}</view><view class="management-stat-label">标准业务量</view></view>
+      </view>
+
+      <view class="management-section-title">五模块薪酬构成</view>
+      <view class="management-module-grid">
+        <view class="management-module" wx:for="{{managementOverview.moduleComposition}}" wx:key="subCategory">
+          <view class="management-module-name">{{item.subCategory}}</view>
+          <view class="management-module-amount">￥{{item.amountText}}</view>
+        </view>
+      </view>
+
+      <view wx:if="{{managementOverview.districtComposition.length}}" class="management-districts">
+        <view class="management-section-title">区县薪酬分布</view>
+        <view class="district-row" wx:for="{{managementOverview.districtComposition}}" wx:key="district">
+          <view class="district-meta">
+            <view class="district-name">{{item.district}}</view>
+            <view class="district-amount">￥{{item.amountText}}</view>
+          </view>
+          <view class="district-track"><view class="district-bar" style="width: {{item.percent}}%;"></view></view>
+          <view class="district-detail">{{item.workOrderCount}} 个工单 · {{item.peopleCount}} 人 · {{item.recordCount}} 条明细</view>
+        </view>
+      </view>
+
+      <button class="btn btn-primary management-detail-btn" bindtap="navigateToManagement">查看工单及人员明细</button>
+    </view>
+
+    <view wx:if="{{canImport}}" class="card admin-feedback-card">
+      <view class="admin-feedback-header">
+        <view>
+          <view class="admin-feedback-title">问题反馈明细</view>
+          <view class="admin-feedback-subtitle">{{filters.settlementMonth}} · 全市所有反馈</view>
+        </view>
+        <view class="admin-feedback-count">{{adminFeedbacks.length}} 条</view>
+      </view>
+
+      <view wx:if="{{adminFeedbacks.length}}" class="admin-feedback-list">
+        <view class="admin-feedback-item" wx:for="{{adminFeedbacks}}" wx:key="_id">
+          <view class="admin-feedback-item-header">
+            <view class="admin-feedback-person">{{item.submitterName}}</view>
+            <view class="status-pill {{item.statusClass}}">{{item.statusText}}</view>
+          </view>
+          <view class="admin-feedback-meta">{{item.district}} · {{item.submitterAccount}} · ￥{{item.amountText}}</view>
+          <view class="admin-feedback-meta">关联范围：{{item.workOrderText}}</view>
+          <view class="admin-feedback-content">{{item.content}}</view>
+          <view class="admin-review-grid">
+            <view class="admin-review-item">
+              <view class="admin-review-role">区县经理 · {{item.managerName}}</view>
+              <view class="status-pill {{item.managerStatusClass}}">{{item.managerStatusText}}</view>
+              <view wx:if="{{item.managerNote}}" class="admin-feedback-meta">{{item.managerNote}}</view>
+            </view>
+            <view class="admin-review-item">
+              <view class="admin-review-role">基层监督员 · {{item.supervisorName}}</view>
+              <view class="status-pill {{item.supervisorStatusClass}}">{{item.supervisorStatusText}}</view>
+              <view wx:if="{{item.supervisorNote}}" class="admin-feedback-meta">{{item.supervisorNote}}</view>
+            </view>
+          </view>
+          <view class="admin-feedback-time">提交时间：{{item.createTimeText}}</view>
+        </view>
+      </view>
+      <view wx:else class="empty-text">当前月份暂无问题反馈</view>
+    </view>
+
+    <view wx:else class="card summary-card">
+      <view class="summary-label">我的本月总酬金</view>
       <view class="summary-amount">￥{{overview.summary.totalAmountText}}</view>
 
       <view class="summary-formula">
         <view class="summary-formula-title">{{overview.summary.formulaTitle}}</view>
         <view class="summary-formula-grid">
           <view
-            class="summary-formula-item {{item.subCategory === filters.subCategory ? 'summary-formula-item-active' : ''}}"
+            class="summary-formula-item"
             wx:for="{{overview.summary.compositionDisplay}}"
             wx:key="subCategory"
             data-sub-category="{{item.subCategory}}"

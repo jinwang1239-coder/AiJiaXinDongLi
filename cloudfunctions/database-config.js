@@ -10,6 +10,8 @@ module.exports = {
         avatarUrl: 'string',
         role: 'string',
         workspaceType: 'string',
+        lineProjectRoles: 'array',
+        managedDistricts: 'array',
         status: 'string',
         phone: 'string',
         department: 'string',
@@ -93,25 +95,33 @@ module.exports = {
         district: 'string',
         gridAccount: 'string',
         userOpenid: 'string',
+        boundUserId: 'string',
+        bindingStatus: 'string',
         bindingSource: 'string',
+        boundTime: 'date|null',
         personName: 'string',
         personKey: 'string',
-        personIdCardHash: 'string',
-        personIdCardMasked: 'string',
         businessQty: 'number',
         workOrderNameRaw: 'string',
         workOrderType: 'string',
         workOrderSubject: 'string',
         workOrderCode: 'string',
         workOrderKey: 'string',
-        excelAmount: 'number',
-        excelFormulaAmount: 'number',
+        completionDateText: 'string',
+        companyCategory: 'string',
+        siteLevel: 'string',
+        endpoint: 'string',
+        importedAmount: 'number',
         calculatedAmount: 'number',
         amountDiff: 'number',
         checkStatus: 'string',
         checkMessage: 'string',
         workloadItems: 'array',
+        workloadSummary: 'string',
         importBatchId: 'string',
+        importRecordKey: 'string',
+        publishStatus: 'string',
+        supersededBy: 'string',
         sourceSheet: 'string',
         sourceRowNo: 'number',
         sourceFileName: 'string',
@@ -122,6 +132,7 @@ module.exports = {
       indexes: [
         { keys: { settlementMonth: 1, subCategory: 1, district: 1 } },
         { keys: { settlementMonth: 1, gridAccount: 1 } },
+        { keys: { gridAccount: 1, bindingStatus: 1, publishStatus: 1 } },
         { keys: { settlementMonth: 1, personKey: 1 } },
         { keys: { settlementMonth: 1, workOrderKey: 1 } },
         { keys: { importBatchId: 1 } },
@@ -142,43 +153,55 @@ module.exports = {
         successRows: 'number',
         errorRows: 'number',
         warningRows: 'number',
-        excelAmountTotal: 'number',
+        boundRows: 'number',
+        pendingClaimRows: 'number',
+        boundAccounts: 'number',
+        pendingClaimAccounts: 'number',
+        importedAmountTotal: 'number',
         calculatedAmountTotal: 'number',
+        totalGridAccounts: 'number',
         totalPeople: 'number',
         totalWorkOrders: 'number',
+        moduleSummaries: 'array',
         districts: 'array',
         replacedRows: 'number',
+        previousBatchNos: 'array',
+        previousBatchNo: 'string',
+        fileFingerprint: 'string',
+        chunkSize: 'number',
+        totalChunks: 'number',
+        completedChunks: 'array',
+        writtenRows: 'number',
         validationMismatchCount: 'number',
         status: 'string',
         errorSummary: 'array',
         createdBy: 'object',
-        createTime: 'date'
+        createTime: 'date',
+        updateTime: 'date',
+        publishedTime: 'date|null',
+        rolledBackTime: 'date|null'
       },
       indexes: [
         { keys: { settlementMonth: 1, subCategory: 1, createTime: -1 } },
         { keys: { batchNo: 1 }, unique: true },
+        { keys: { status: 1, createTime: -1 } },
         { keys: { createTime: -1 } }
       ]
     },
     {
-      name: 'user_person_bindings',
-      description: '系统用户与集客线路人员绑定表',
+      name: 'line_project_active_versions',
+      description: '集客线路各结算月份当前生效批次指针',
       fields: {
-        userOpenid: 'string',
-        gridAccount: 'string',
-        personKey: 'string',
-        personName: 'string',
-        personIdCardHash: 'string',
-        district: 'string',
-        bindingSource: 'string',
-        status: 'string',
+        settlementMonth: 'string',
+        activeBatchNo: 'string',
+        previousBatchNo: 'string',
+        updatedBy: 'object',
         createTime: 'date',
         updateTime: 'date'
       },
       indexes: [
-        { keys: { userOpenid: 1 } },
-        { keys: { personKey: 1 }, unique: true },
-        { keys: { gridAccount: 1 } }
+        { keys: { settlementMonth: 1 }, unique: true },
+        { keys: { activeBatchNo: 1 } }
       ]
     },
     {
@@ -191,12 +214,16 @@ module.exports = {
         workspaceType: 'string',
         scene: 'string',
         salaryMonth: 'string',
+        importBatchNos: 'array',
         salaryAmount: 'number',
+        relatedWorkOrder: 'object',
         content: 'string',
+        reviewNote: 'string',
         status: 'string',
         submitter: 'object',
         managerReview: 'object',
         supervisorReview: 'object',
+        processLogs: 'array',
         createTime: 'date',
         updateTime: 'date'
       },
@@ -219,6 +246,7 @@ module.exports = {
         district: 'string',
         gridName: 'string',
         settlementMonth: 'string',
+        importBatchNos: 'array',
         amount: 'number',
         status: 'string',
         confirmType: 'string',
@@ -249,12 +277,26 @@ module.exports = {
         { keys: { district: 1 } },
         { keys: { status: 1 } }
       ]
+    },
+    {
+      name: 'line_project_audit_logs',
+      description: '集客线路关键操作审计日志',
+      fields: {
+        action: 'string',
+        details: 'object',
+        operator: 'object',
+        createTime: 'date'
+      },
+      indexes: [
+        { keys: { action: 1, createTime: -1 } },
+        { keys: { 'operator.openid': 1, createTime: -1 } }
+      ]
     }
   ],
 
   securityRules: {
     users: {
-      read: true,
+      read: false,
       write: false
     },
     business_records: {
@@ -262,27 +304,31 @@ module.exports = {
       write: false
     },
     line_project_records: {
-      read: true,
+      read: false,
       write: false
     },
     line_project_import_batches: {
-      read: true,
+      read: false,
       write: false
     },
-    user_person_bindings: {
-      read: true,
+    line_project_active_versions: {
+      read: false,
       write: false
     },
     salary_feedbacks: {
-      read: true,
+      read: false,
       write: false
     },
     line_project_month_confirms: {
-      read: true,
+      read: false,
       write: false
     },
     feedback_routes: {
-      read: true,
+      read: false,
+      write: false
+    },
+    line_project_audit_logs: {
+      read: false,
       write: false
     }
   }

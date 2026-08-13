@@ -332,6 +332,9 @@ Page({
       const user = await auth.updateProfile(this.data.profileForm)
       this.setUserState(user)
       this.setData({ showProfileModal: false })
+      if (user.lineProjectClaimedRecords > 0) {
+        wx.showToast({ title: `已认领${user.lineProjectClaimedRecords}条`, icon: 'success' })
+      }
 
       if (await this.routeByWorkspace(user, { selectedWorkspaceType: this.data.selectedWorkspaceType })) {
         return
@@ -341,7 +344,12 @@ Page({
       wx.showToast({ title: '资料已保存', icon: 'success' })
     } catch (error) {
       console.error('保存个人信息失败:', error)
-      wx.showToast({ title: '保存失败', icon: 'error' })
+      const message = error.message || '保存失败'
+      if (message.includes('待认领数据') || message.includes('已认领集客线路数据')) {
+        wx.showModal({ title: '无法自动认领', content: message, showCancel: false })
+      } else {
+        wx.showToast({ title: message, icon: 'none' })
+      }
     } finally {
       this.setData({ savingProfile: false })
     }

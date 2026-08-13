@@ -4,10 +4,6 @@ const WORKSPACE_TYPES = {
 }
 
 const SYSTEM_ADMIN_ROLE = 'system_admin'
-const SYSTEM_ADMIN_PROFILE = {
-  realName: '王谨',
-  gridAccount: '15871165073'
-}
 const PREFERRED_WORKSPACE_KEY = 'preferredWorkspaceType'
 
 const SALES_ROLE_TEXT = {
@@ -35,10 +31,7 @@ function isSystemAdmin(input) {
     return false
   }
 
-  return input.role === SYSTEM_ADMIN_ROLE || (
-    String(input.realName || '').trim() === SYSTEM_ADMIN_PROFILE.realName &&
-    String(input.gridAccount || '').trim() === SYSTEM_ADMIN_PROFILE.gridAccount
-  )
+  return input.role === SYSTEM_ADMIN_ROLE
 }
 
 function getWorkspaceType(input) {

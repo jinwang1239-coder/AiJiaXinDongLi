@@ -1,10 +1,10 @@
-<navigation-bar title="集客开通" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="{{filters.subCategory || '集客线路'}}" back="{{true}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y bindscrolltolower="onReachBottom">
   <view class="line-project-page">
     <view class="card">
       <view class="card-header">
-        <view class="card-title">集客开通汇总</view>
+        <view class="card-title">{{filters.subCategory || '全部模块'}}汇总</view>
         <button class="btn btn-secondary mini-btn" bindtap="applyFilters" loading="{{overviewLoading || loading}}">刷新</button>
       </view>
 
@@ -25,15 +25,11 @@
       <view class="overview-hero-grid">
         <view class="overview-tile primary-tile overview-amount-tile">
           <view class="overview-value">￥{{overview.totalAmountText}}</view>
-          <view class="overview-label">本人集客开通酬金</view>
+          <view class="overview-label">本人{{filters.subCategory || '集客线路'}}酬金</view>
         </view>
       </view>
 
       <view class="overview-grid">
-        <view class="overview-tile">
-          <view class="overview-value">{{overview.totalWorkOrders}}</view>
-          <view class="overview-label">参与项目数</view>
-        </view>
         <view class="overview-tile">
           <view class="overview-value">{{overview.totalWorkOrders}}</view>
           <view class="overview-label">参与工单数</view>
@@ -42,10 +38,14 @@
           <view class="overview-value">{{overview.totalRecords}}</view>
           <view class="overview-label">明细条数</view>
         </view>
+        <view wx:if="{{filters.subCategory && filters.subCategory !== '集客开通'}}" class="overview-tile">
+          <view class="overview-value">{{overview.businessQtyTotal}}</view>
+          <view class="overview-label">业务量</view>
+        </view>
       </view>
     </view>
 
-    <view class="card">
+    <view wx:if="{{filters.subCategory === '集客开通'}}" class="card">
       <view class="card-header">
         <view class="card-title">工作量明细汇总</view>
       </view>
@@ -55,14 +55,17 @@
           <view class="group-head" data-group-name="{{item.groupName}}" bindtap="toggleOverviewGroup">
             <view class="group-head-main">
               <view class="group-title">{{item.groupName}}</view>
-              <view class="group-summary">{{item.summaryText}}</view>
+              <view class="group-summary">{{item.summaryText}} · 小计 ￥{{item.amountTotalText}}</view>
             </view>
             <view class="group-toggle">{{item.expanded ? '收起' : '展开'}}</view>
           </view>
           <view wx:if="{{item.expanded}}" class="group-items compact-group-items">
             <view class="group-item {{workItem.hasValue ? 'group-item-active' : ''}}" wx:for="{{item.items}}" wx:key="itemCode" wx:for-item="workItem">
               <view class="group-item-name">{{workItem.itemName}}</view>
-              <view class="group-item-value">{{workItem.qtyText}}{{workItem.unit}}</view>
+              <view class="group-item-value">
+                <view>{{workItem.qtyText}}{{workItem.unit}}</view>
+                <view class="group-item-price">单价 ￥{{workItem.unitPriceText}} · 金额 ￥{{workItem.amountText}}</view>
+              </view>
             </view>
           </view>
         </view>
@@ -80,7 +83,7 @@
           <view class="item-main">
             <view class="item-code">工单号：{{item.projectCode}}</view>
             <view class="item-title">{{item.projectTitle}}</view>
-            <view class="item-sub">{{item.workloadSummary || '暂无工作量明细'}}</view>
+            <view class="item-sub">{{item.workloadSummaryText}}</view>
           </view>
           <view class="item-side">
             <view class="item-value">￥{{item.totalAmountText}}</view>
@@ -88,7 +91,7 @@
           </view>
         </view>
       </view>
-      <view wx:else class="empty-text">当前月份暂无本人参与的集客开通项目</view>
+      <view wx:else class="empty-text">当前月份暂无本人参与的{{filters.subCategory || '集客线路'}}项目</view>
     </view>
 
     <view wx:if="{{hasMore && records.length}}" class="load-text">{{loading ? '加载中...' : '上拉加载更多'}}</view>
@@ -108,10 +111,14 @@
         <view class="detail-code">工单号：{{detail.summary.workOrderCode || '未识别工单号'}}</view>
         <view class="detail-title">{{detail.summary.workOrderSubject || detail.summary.workOrderNameRaw}}</view>
         <view class="detail-line">本人酬金：￥{{detail.summary.totalAmountText}}</view>
-        <view class="detail-line">业务量合计：{{detail.summary.businessQtyTotal}}</view>
+        <view wx:if="{{detail.summary.subCategory !== '集客开通'}}" class="detail-line">业务量：{{detail.summary.businessQtyTotal}}</view>
+        <view wx:if="{{detail.summary.completionDateText}}" class="detail-line">完成日期：{{detail.summary.completionDateText}}</view>
+        <view wx:if="{{detail.summary.companyCategory}}" class="detail-line">公司分类：{{detail.summary.companyCategory}}</view>
+        <view wx:if="{{detail.summary.siteLevel}}" class="detail-line">站点级别：{{detail.summary.siteLevel}}</view>
+        <view wx:if="{{detail.summary.endpoint}}" class="detail-line">端别：{{detail.summary.endpoint}}</view>
       </view>
 
-      <view class="group-list">
+      <view wx:if="{{detail.summary.subCategory === '集客开通'}}" class="group-list">
         <view class="group-card" wx:for="{{detail.groupedWorkloads}}" wx:key="groupName">
           <view class="group-head" data-group-name="{{item.groupName}}" bindtap="toggleDetailGroup">
             <view class="group-head-main">
@@ -123,7 +130,7 @@
           <view wx:if="{{item.expanded}}" class="group-items compact-group-items">
             <view class="group-item {{workItem.hasValue ? 'group-item-active' : ''}}" wx:for="{{item.items}}" wx:key="itemCode" wx:for-item="workItem">
               <view class="group-item-name">{{workItem.itemName}}</view>
-              <view class="group-item-value">{{workItem.qtyText}}{{workItem.unit}}</view>
+              <view class="group-item-value">{{workItem.qtyText}}{{workItem.unit}} × ￥{{workItem.unitPriceText}} = ￥{{workItem.amountText}}</view>
             </view>
           </view>
         </view>

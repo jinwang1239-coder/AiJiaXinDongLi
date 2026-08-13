@@ -16,6 +16,10 @@
       </view>
 
       <view wx:if="{{profileCompleted}}" class="form-group">
+        <view wx:if="{{feedbackContext.workspaceType === 'line_project'}}" class="form-label">关联范围</view>
+        <picker wx:if="{{feedbackContext.workspaceType === 'line_project'}}" range="{{workOrderOptions}}" range-key="label" value="{{feedbackForm.workOrderIndex}}" bindchange="onWorkOrderChange">
+          <view class="summary-block">{{workOrderOptions[feedbackForm.workOrderIndex].label}}</view>
+        </picker>
         <view class="form-label">疑问内容</view>
         <textarea
           class="form-textarea"
@@ -49,15 +53,18 @@
             <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
           </view>
           <view class="item-meta">{{amountFieldLabel}}：￥{{item.salaryAmountText}}</view>
+          <view wx:if="{{item.relatedWorkOrder}}" class="item-meta">关联工单：{{item.relatedWorkOrder.subCategory}} · {{item.relatedWorkOrder.workOrderCode || item.relatedWorkOrder.workOrderSubject}}</view>
           <view class="item-content">{{item.content}}</view>
           <view class="review-grid">
             <view class="review-item">
               <view class="review-label">区县经理</view>
               <view class="status-tag small {{item.managerStatusClass}}">{{item.managerStatusText}}</view>
+              <view wx:if="{{item.managerReview.reviewNote}}" class="item-meta">{{item.managerReview.reviewNote}}</view>
             </view>
             <view class="review-item">
               <view class="review-label">基层监督员</view>
               <view class="status-tag small {{item.supervisorStatusClass}}">{{item.supervisorStatusText}}</view>
+              <view wx:if="{{item.supervisorReview.reviewNote}}" class="item-meta">{{item.supervisorReview.reviewNote}}</view>
             </view>
           </view>
           <view class="item-time">{{item.createTimeText}}</view>
@@ -76,6 +83,7 @@
           </view>
           <view class="item-meta">{{item.submitter.name}} · {{item.district}} · {{item.salaryMonth}}</view>
           <view class="item-meta">{{amountFieldLabel}}：￥{{item.salaryAmountText}}</view>
+          <view wx:if="{{item.relatedWorkOrder}}" class="item-meta">关联工单：{{item.relatedWorkOrder.subCategory}} · {{item.relatedWorkOrder.workOrderCode || item.relatedWorkOrder.workOrderSubject}}</view>
           <view class="item-content">{{item.content}}</view>
           <view class="action-row">
             <button

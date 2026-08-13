@@ -14,20 +14,32 @@ function decorateGroupedWorkloads(groups = [], expandedGroups = {}) {
       activeCount,
       itemCount,
       summaryText: activeCount > 0 ? `${activeCount}/${itemCount}项有量` : `0/${itemCount}项`,
+      amountTotal: items.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+      amountTotalText: lineProjectConfig.formatMoney(items.reduce((sum, item) => sum + Number(item.amount || 0), 0)),
       expanded: !!expandedGroups[group.groupName]
     }
   })
 }
 
-function buildDefaultOverview(settlementMonth) {
+function buildDefaultOverview(settlementMonth, subCategory = '') {
+  const opening = !subCategory || subCategory === lineProjectConfig.CURRENT_SUBCATEGORY
   return {
     settlementMonth,
+    subCategory,
     totalAmount: 0,
     totalAmountText: lineProjectConfig.formatMoney(0),
     totalWorkOrders: 0,
     totalRecords: 0,
-    groupedWorkloads: decorateGroupedWorkloads(lineProjectConfig.buildGroupedWorkloadItems([]), {})
+    businessQtyTotal: 0,
+    groupedWorkloads: opening
+      ? decorateGroupedWorkloads(lineProjectConfig.buildGroupedWorkloadItems([]), {})
+      : []
   }
+}
+
+function getDefaultExpandedGroups(groups = []) {
+  const firstGroup = (groups || []).find(group => Number(group.activeCount || 0) > 0) || groups[0]
+  return firstGroup ? { [firstGroup.groupName]: true } : {}
 }
 
 Page({
@@ -37,6 +49,7 @@ Page({
     monthPickerValue: lineProjectConfig.toMonthPickerValue(),
     filters: {
       settlementMonth: lineProjectConfig.getDefaultSettlementMonth(),
+      subCategory: '',
       keyword: ''
     },
     overview: buildDefaultOverview(lineProjectConfig.getDefaultSettlementMonth()),
@@ -52,11 +65,13 @@ Page({
   },
 
   onLoad(options = {}) {
-    const settlementMonth = options.settlementMonth || this.data.filters.settlementMonth
+    const settlementMonth = lineProjectConfig.decodeQueryValue(options.settlementMonth) || this.data.filters.settlementMonth
+    const subCategory = lineProjectConfig.normalizeSubCategory(options.subCategory, lineProjectConfig.CURRENT_SUBCATEGORY)
     this.setData({
       monthPickerValue: lineProjectConfig.toMonthPickerValue(settlementMonth),
       'filters.settlementMonth': settlementMonth,
-      overview: buildDefaultOverview(settlementMonth)
+      'filters.subCategory': subCategory,
+      overview: buildDefaultOverview(settlementMonth, subCategory)
     })
   },
 
@@ -93,29 +108,34 @@ Page({
       this.setData({ overviewLoading: true })
       const data = await lineProjectService.callLineProject('getMyOverview', {
         filters: {
-          settlementMonth: this.data.filters.settlementMonth
+          settlementMonth: this.data.filters.settlementMonth,
+          subCategory: this.data.filters.subCategory
         }
       })
       const category = (data.categories && data.categories[0]) || {}
+      const selectedCategory = (data.categories || []).find(item => item.subCategory === this.data.filters.subCategory) || category
       const totalAmount = Number(data.summary && data.summary.totalAmount) || 0
-      const groupedWorkloads = decorateGroupedWorkloads(
-        lineProjectConfig.buildGroupedWorkloadItems(category.workloadItems || []),
-        {}
-      )
+      const baseGroups = this.data.filters.subCategory === lineProjectConfig.CURRENT_SUBCATEGORY
+        ? decorateGroupedWorkloads(lineProjectConfig.buildGroupedWorkloadItems(selectedCategory.workloadItems || []), {})
+        : []
+      const expandedGroups = getDefaultExpandedGroups(baseGroups)
+      const groupedWorkloads = decorateGroupedWorkloads(baseGroups, expandedGroups)
 
       this.setData({
-        overviewExpandedGroups: {},
+        overviewExpandedGroups: expandedGroups,
         overview: {
           settlementMonth: data.summary ? data.summary.settlementMonth : this.data.filters.settlementMonth,
+          subCategory: this.data.filters.subCategory,
           totalAmount,
           totalAmountText: lineProjectConfig.formatMoney(totalAmount),
           totalWorkOrders: Number(data.summary && data.summary.totalWorkOrders) || 0,
           totalRecords: Number(data.summary && data.summary.totalRecords) || 0,
+          businessQtyTotal: Number(data.summary && data.summary.businessQtyTotal) || 0,
           groupedWorkloads
         }
       })
     } catch (error) {
-      console.error('加载集客开通专属页汇总失败:', error)
+      console.error('加载集客线路模块汇总失败:', error)
       wx.showToast({
         title: error.message || '加载失败',
         icon: 'none'
@@ -144,7 +164,8 @@ Page({
         ...item,
         totalAmountText: lineProjectConfig.formatMoney(item.totalAmount),
         projectTitle: item.workOrderSubject || item.workOrderNameRaw,
-        projectCode: item.workOrderCode || '未识别工单号'
+        projectCode: item.workOrderCode || '未识别工单号',
+        workloadSummaryText: item.workloadSummary || `业务量 ${Number(item.businessQtyTotal || 0)}`
       }))
       const records = reset ? nextRecords : this.data.records.concat(nextRecords)
 
@@ -155,7 +176,7 @@ Page({
         hasMore: records.length < Number(data.total || 0)
       })
     } catch (error) {
-      console.error('加载集客开通项目列表失败:', error)
+      console.error('加载集客线路项目列表失败:', error)
       wx.showToast({
         title: error.message || '加载失败',
         icon: 'none'
@@ -170,7 +191,7 @@ Page({
     this.setData({
       monthPickerValue: e.detail.value,
       'filters.settlementMonth': settlementMonth,
-      overview: buildDefaultOverview(settlementMonth)
+      overview: buildDefaultOverview(settlementMonth, this.data.filters.subCategory)
     })
   },
 
@@ -209,22 +230,27 @@ Page({
       const data = await lineProjectService.callLineProject('getMyWorkOrderDetail', {
         workOrderKey,
         filters: {
-          settlementMonth: this.data.filters.settlementMonth
+          settlementMonth: this.data.filters.settlementMonth,
+          subCategory: this.data.filters.subCategory
         }
       })
+      const opening = data.summary.subCategory === lineProjectConfig.CURRENT_SUBCATEGORY
+      const baseDetailGroups = opening
+        ? decorateGroupedWorkloads(lineProjectConfig.buildGroupedWorkloadItems(data.workloadItems || []), {})
+        : []
+      const detailExpandedGroups = getDefaultExpandedGroups(baseDetailGroups)
 
       this.setData({
-        detailExpandedGroups: {},
+        detailExpandedGroups,
         showDetail: true,
         detail: {
           summary: {
             ...data.summary,
             totalAmountText: lineProjectConfig.formatMoney(data.summary.totalAmount)
           },
-          groupedWorkloads: decorateGroupedWorkloads(
-            lineProjectConfig.buildGroupedWorkloadItems(data.workloadItems || []),
-            {}
-          )
+          groupedWorkloads: opening
+            ? decorateGroupedWorkloads(baseDetailGroups, detailExpandedGroups)
+            : []
         }
       })
     } catch (error) {

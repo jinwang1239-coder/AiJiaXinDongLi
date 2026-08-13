@@ -157,6 +157,15 @@
   font-size: 23rpx;
   color: #0f766e;
   font-weight: 600;
+  min-width: 220rpx;
+  text-align: right;
+}
+
+.group-item-price {
+  margin-top: 4rpx;
+  color: #64748b;
+  font-size: 20rpx;
+  font-weight: 400;
   white-space: nowrap;
 }
 

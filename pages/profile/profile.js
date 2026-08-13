@@ -149,7 +149,7 @@ Page({
       })
       this.setProfileState(user)
       wx.showToast({
-        title: '保存成功',
+        title: user.lineProjectClaimedRecords > 0 ? `已认领${user.lineProjectClaimedRecords}条` : '保存成功',
         icon: 'success'
       })
       setTimeout(() => {
@@ -157,10 +157,12 @@ Page({
       }, 500)
     } catch (error) {
       console.error('保存个人信息失败:', error)
-      wx.showToast({
-        title: '保存失败',
-        icon: 'error'
-      })
+      const message = error.message || '保存失败'
+      if (message.includes('待认领数据') || message.includes('已认领集客线路数据')) {
+        wx.showModal({ title: '无法自动认领', content: message, showCancel: false })
+      } else {
+        wx.showToast({ title: message, icon: 'none' })
+      }
     } finally {
       this.setData({ saving: false })
     }

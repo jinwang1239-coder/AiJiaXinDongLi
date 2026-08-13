@@ -11,6 +11,8 @@
 
 .workspace-card,
 .month-card,
+.management-card,
+.admin-feedback-card,
 .summary-card {
   margin-bottom: 20rpx;
 }
@@ -83,6 +85,17 @@
   margin-top: 18rpx;
 }
 
+.workspace-admin-row {
+  display: flex;
+  gap: 18rpx;
+}
+
+.workspace-admin-row .admin-import-btn {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .admin-import-btn {
   width: 100%;
   height: 80rpx;
@@ -104,6 +117,240 @@
   margin-top: 12rpx;
   font-size: 24rpx;
   color: #6b7280;
+}
+
+.management-card {
+  padding: 30rpx 26rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 18rpx 40rpx rgba(15, 118, 110, 0.09);
+}
+
+.management-header,
+.district-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.management-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #102033;
+}
+
+.management-scope,
+.district-detail {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #778395;
+}
+
+.management-month {
+  flex-shrink: 0;
+  padding: 10rpx 16rpx;
+  border-radius: 20rpx;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.management-total-label {
+  margin-top: 28rpx;
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.management-total {
+  margin-top: 8rpx;
+  font-size: 54rpx;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #0f8b72;
+}
+
+.management-stats,
+.management-module-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.management-stats {
+  margin-top: 22rpx;
+}
+
+.management-stat,
+.management-module {
+  padding: 18rpx;
+  border-radius: 18rpx;
+  background: #f5f9f8;
+}
+
+.management-stat-value {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #102033;
+}
+
+.management-stat-label,
+.management-module-name {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #748094;
+}
+
+.management-section-title {
+  margin: 28rpx 0 16rpx;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #243447;
+}
+
+.management-module-amount {
+  margin-top: 8rpx;
+  font-size: 27rpx;
+  font-weight: 700;
+  color: #0f8b72;
+}
+
+.district-row + .district-row {
+  margin-top: 20rpx;
+}
+
+.district-name,
+.district-amount {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #334155;
+}
+
+.district-amount {
+  color: #0f8b72;
+}
+
+.district-track {
+  height: 12rpx;
+  margin-top: 10rpx;
+  overflow: hidden;
+  border-radius: 8rpx;
+  background: #e8f1ef;
+}
+
+.district-bar {
+  height: 100%;
+  border-radius: 8rpx;
+  background: linear-gradient(90deg, #0f8b72 0%, #38b99c 100%);
+}
+
+.management-detail-btn {
+  margin-top: 28rpx;
+  width: 100%;
+  border-radius: 18rpx;
+}
+
+.admin-feedback-card {
+  padding: 30rpx 26rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 18rpx 40rpx rgba(15, 118, 110, 0.09);
+}
+
+.admin-feedback-header,
+.admin-feedback-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.admin-feedback-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #102033;
+}
+
+.admin-feedback-subtitle,
+.admin-feedback-meta,
+.admin-feedback-time {
+  color: #748094;
+  font-size: 23rpx;
+}
+
+.admin-feedback-subtitle {
+  margin-top: 8rpx;
+}
+
+.admin-feedback-count {
+  flex-shrink: 0;
+  padding: 10rpx 16rpx;
+  border-radius: 20rpx;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 23rpx;
+}
+
+.admin-feedback-list {
+  margin-top: 22rpx;
+}
+
+.admin-feedback-item {
+  padding: 22rpx;
+  border-radius: 20rpx;
+  background: #f7faf9;
+  border: 1rpx solid #e4eeeb;
+}
+
+.admin-feedback-item + .admin-feedback-item {
+  margin-top: 18rpx;
+}
+
+.admin-feedback-person {
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #203247;
+}
+
+.admin-feedback-meta {
+  margin-top: 9rpx;
+  line-height: 1.5;
+}
+
+.admin-feedback-content {
+  margin-top: 14rpx;
+  padding: 18rpx;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: #334155;
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.admin-review-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 14rpx;
+}
+
+.admin-review-item {
+  padding: 16rpx;
+  border-radius: 16rpx;
+  background: #eef6f4;
+}
+
+.admin-review-role {
+  margin-bottom: 10rpx;
+  color: #475569;
+  font-size: 22rpx;
+}
+
+.admin-feedback-time {
+  margin-top: 14rpx;
+  text-align: right;
 }
 
 .summary-card {
