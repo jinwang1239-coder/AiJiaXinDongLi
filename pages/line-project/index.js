@@ -18,11 +18,11 @@ function isProfileCompleted(user) {
 
 function getFeedbackStatusText(status) {
   const statusMap = {
-    pending: '反馈待处理',
-    processing: '反馈处理中',
-    approved: '反馈已通过',
-    rejected: '反馈已驳回',
-    not_required: '无需审批'
+    pending: '待反馈',
+    processing: '待反馈',
+    resolved: '已反馈',
+    approved: '已反馈',
+    rejected: '已反馈'
   }
 
   return statusMap[status] || '待确认'
@@ -32,6 +32,7 @@ function getStatusClass(status) {
   const statusClassMap = {
     pending: 'status-pending',
     processing: 'status-processing',
+    resolved: 'status-approved',
     approved: 'status-approved',
     rejected: 'status-rejected',
     not_required: 'status-pending'
@@ -56,6 +57,22 @@ function buildAdminFeedbackList(records = []) {
     const managerReview = record.managerReview || {}
     const supervisorReview = record.supervisorReview || {}
     const workOrder = record.relatedWorkOrder || {}
+    const legacyResolution = [
+      { value: managerReview, roleText: '区县经理' },
+      { value: supervisorReview, roleText: '基层监督员' }
+    ].find(item => ['resolved', 'approved', 'rejected'].includes(item.value.status))
+    const resolution = record.resolution || (legacyResolution ? {
+      handlerRoleText: legacyResolution.roleText,
+      handler: legacyResolution.value,
+      content: legacyResolution.value.reviewNote || '',
+      attachments: [],
+      resolveTime: legacyResolution.value.reviewTime
+    } : null)
+    const pendingHandlers = [
+      { value: managerReview, roleText: '区县经理' },
+      { value: supervisorReview, roleText: '基层监督员' }
+    ].filter(item => item.value.status === 'pending')
+      .map(item => `${item.value.name || item.value.gridAccount || item.roleText}（${item.roleText}）`)
     return {
       ...record,
       submitterName: (record.submitter && record.submitter.name) || record.gridAccount || '未知人员',
@@ -64,14 +81,17 @@ function buildAdminFeedbackList(records = []) {
       createTimeText: formatDateTime(record.createTime),
       statusText: getFeedbackStatusText(record.status),
       statusClass: getStatusClass(record.status),
-      managerName: managerReview.name || managerReview.gridAccount || '未配置',
-      managerStatusText: getFeedbackStatusText(managerReview.status),
-      managerStatusClass: getStatusClass(managerReview.status),
-      managerNote: managerReview.reviewNote || '',
-      supervisorName: supervisorReview.name || supervisorReview.gridAccount || '未配置',
-      supervisorStatusText: getFeedbackStatusText(supervisorReview.status),
-      supervisorStatusClass: getStatusClass(supervisorReview.status),
-      supervisorNote: supervisorReview.reviewNote || '',
+      isResolved: ['resolved', 'approved', 'rejected'].includes(record.status),
+      waitingText: pendingHandlers.length ? `待${pendingHandlers.join('或')}反馈中` : '等待问题处理人反馈',
+      resolutionHandlerText: resolution
+        ? `${(resolution.handler && (resolution.handler.name || resolution.handler.realName || resolution.handler.gridAccount)) || '处理人'}（${resolution.handlerRoleText || '问题处理人'}）`
+        : '',
+      resolutionContent: resolution ? resolution.content || '' : '',
+      resolutionTimeText: resolution ? formatDateTime(resolution.resolveTime) : '',
+      resolutionFileIDs: resolution && Array.isArray(resolution.attachments)
+        ? resolution.attachments.map(item => typeof item === 'string' ? item : item.fileID).filter(Boolean)
+        : [],
+      resolutionImageUrls: [],
       workOrderText: workOrder.workOrderKey
         ? `${workOrder.subCategory || ''} · ${workOrder.workOrderCode || workOrder.workOrderSubject || workOrder.workOrderNameRaw || '关联工单'}`
         : '整月薪酬'
@@ -87,9 +107,7 @@ function buildDefaultFeedbackDecision(settlementMonth) {
     detailText: '本月酬金核对无误可签字确认，如有疑问请提交问题反馈。',
     subText: '',
     canConfirm: true,
-    canFeedback: true,
     confirmBlockedReason: '',
-    feedbackBlockedReason: '',
     confirmButtonText: '签字确认',
     feedbackButtonText: '问题反馈'
   }
@@ -98,15 +116,12 @@ function buildDefaultFeedbackDecision(settlementMonth) {
 function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPublishedData, confirmRecord, feedbackRecord }) {
   const state = buildDefaultFeedbackDecision(settlementMonth)
   state.canConfirm = !!profileCompleted
-  state.canFeedback = !!profileCompleted
 
   if (!profileCompleted) {
     state.statusText = '待完善资料'
     state.detailText = '请先完善个人信息后再签字确认或提交问题反馈。'
     state.canConfirm = false
-    state.canFeedback = false
     state.confirmBlockedReason = '请先完善个人信息'
-    state.feedbackBlockedReason = '请先完善个人信息'
     return state
   }
 
@@ -114,9 +129,7 @@ function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPubl
     state.statusText = '暂无发布数据'
     state.detailText = '当前月份暂无本人集客线路数据，不能签字确认或提交问题反馈。'
     state.canConfirm = false
-    state.canFeedback = false
     state.confirmBlockedReason = '当前月份暂无本人数据'
-    state.feedbackBlockedReason = '当前月份暂无本人数据'
     return state
   }
 
@@ -128,9 +141,7 @@ function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPubl
       : '本月酬金已完成签字确认。'
     state.subText = `确认金额：￥${lineProjectConfig.formatMoney(confirmRecord.amount)}`
     state.canConfirm = false
-    state.canFeedback = false
     state.confirmBlockedReason = '本月已完成签字确认'
-    state.feedbackBlockedReason = '本月已完成签字确认'
     state.confirmButtonText = '已签字确认'
     return state
   }
@@ -144,20 +155,16 @@ function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPubl
   state.subText = feedbackRecord.createTimeText ? `提交时间：${feedbackRecord.createTimeText}` : ''
 
   if (feedbackRecord.status === 'pending') {
-    state.detailText = '问题反馈已提交，等待审批处理后可继续签字确认。'
+    state.detailText = '问题反馈已提交，等待基层监督员或区县经理答复后可继续签字确认。'
     state.canConfirm = false
-    state.canFeedback = false
     state.confirmBlockedReason = '当前存在待处理反馈'
-    state.feedbackBlockedReason = '当前存在待处理反馈'
     return state
   }
 
   if (feedbackRecord.status === 'processing') {
     state.detailText = '问题反馈正在处理中，暂不能签字确认或重复反馈。'
     state.canConfirm = false
-    state.canFeedback = false
     state.confirmBlockedReason = '当前反馈正在处理中'
-    state.feedbackBlockedReason = '当前反馈正在处理中'
     return state
   }
 
@@ -211,9 +218,17 @@ function buildDefaultManagementOverview(settlementMonth) {
   }
 }
 
-function buildManagementOverview(data = {}, settlementMonth = '') {
+function buildManagementOverview(data = {}, settlementMonth = '', evidenceRecords = []) {
   const stats = data.stats || {}
   const totalAmount = Number(stats.totalAmount || 0)
+  const evidenceMap = {}
+  ;(evidenceRecords || []).forEach(record => {
+    const district = String(record.district || '').trim()
+    if (!district) return
+    if (!evidenceMap[district]) evidenceMap[district] = { uploadCount: 0, imageCount: 0 }
+    evidenceMap[district].uploadCount += 1
+    evidenceMap[district].imageCount += Array.isArray(record.fileIDs) ? record.fileIDs.length : 0
+  })
   return {
     settlementMonth,
     totalAmountText: lineProjectConfig.formatMoney(totalAmount),
@@ -222,11 +237,20 @@ function buildManagementOverview(data = {}, settlementMonth = '') {
     totalRecords: Number(stats.totalRecords || 0),
     totalBusinessQty: Number(stats.totalBusinessQty || 0),
     moduleComposition: buildCompositionDisplay(data.moduleComposition || []),
-    districtComposition: (data.districtComposition || []).map(item => ({
-      ...item,
-      amountText: lineProjectConfig.formatMoney(item.amount),
-      percent: totalAmount > 0 ? Math.max(2, Math.round(Number(item.amount || 0) / totalAmount * 100)) : 0
-    }))
+    districtComposition: (data.districtComposition || []).map(item => {
+      const evidence = evidenceMap[item.district] || { uploadCount: 0, imageCount: 0 }
+      return {
+        ...item,
+        amountText: lineProjectConfig.formatMoney(item.amount),
+        percent: totalAmount > 0 ? Math.max(2, Math.round(Number(item.amount || 0) / totalAmount * 100)) : 0,
+        evidenceUploadCount: evidence.uploadCount,
+        evidenceImageCount: evidence.imageCount,
+        hasEvidence: evidence.uploadCount > 0,
+        evidenceText: evidence.uploadCount > 0
+          ? `已上传${evidence.uploadCount}次 · 共${evidence.imageCount}张`
+          : '本月暂未上传'
+      }
+    })
   }
 }
 
@@ -240,6 +264,12 @@ Page({
     profileCompleted: false,
     canImport: false,
     canManage: false,
+    canViewManagedFeedbacks: false,
+    canResolveFeedback: false,
+    canUploadEvidence: false,
+    canViewEvidence: false,
+    canViewAllEvidence: false,
+    feedbackScopeText: '',
     managementScopeTitle: '管理范围酬金总览',
     managementScopeText: '',
     managedDistrictsText: '',
@@ -249,7 +279,7 @@ Page({
       subCategory: ''
     },
     managementOverview: buildDefaultManagementOverview(lineProjectConfig.getDefaultSettlementMonth()),
-    adminFeedbacks: [],
+    managedFeedbacks: [],
     overview: buildDefaultOverview(lineProjectConfig.getDefaultSettlementMonth()),
     feedbackDecision: buildDefaultFeedbackDecision(lineProjectConfig.getDefaultSettlementMonth())
   },
@@ -263,7 +293,7 @@ Page({
         subCategory: ''
       },
       managementOverview: buildDefaultManagementOverview(settlementMonth),
-      adminFeedbacks: [],
+      managedFeedbacks: [],
       overview: buildDefaultOverview(settlementMonth),
       feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
     })
@@ -318,6 +348,14 @@ Page({
       this.setData({
         canImport: !!access.canImport,
         canManage: !!access.canManage,
+        canViewManagedFeedbacks: !!access.canViewManagedFeedbacks,
+        canResolveFeedback: (access.lineProjectRoles || []).some(item => ['district_supervisor', 'district_manager'].includes(item)),
+        canUploadEvidence: !!access.canUploadEvidence,
+        canViewEvidence: !!access.canViewEvidence,
+        canViewAllEvidence: !!access.canViewAllEvidence,
+        feedbackScopeText: access.canViewAll
+          ? '全市所有反馈'
+          : `${(access.managedDistricts || []).join('、')}问题反馈`,
         managementScopeTitle: access.canViewAll ? '全市酬金总览' : '本区县酬金总览',
         managementScopeText: access.canViewAll
           ? '数据范围：全部区县'
@@ -329,10 +367,27 @@ Page({
       const role = user.role || ''
       const canImport = ['sales_department', workspace.SYSTEM_ADMIN_ROLE].includes(role)
       const canManage = ['district_manager', 'sales_department', workspace.SYSTEM_ADMIN_ROLE].includes(role)
-      this.currentAccess = { canImport, canManage, canViewAll: canImport }
+      const lineProjectRoles = Array.isArray(user.lineProjectRoles) ? user.lineProjectRoles : []
+      const canViewManagedFeedbacks = canManage || lineProjectRoles.some(item => ['district_supervisor', 'district_leader'].includes(item))
+      const canResolveFeedback = role === 'district_manager' || lineProjectRoles.some(item => ['district_supervisor', 'district_manager'].includes(item))
+      const canUploadEvidence = role === 'district_manager' || lineProjectRoles.includes('district_leader')
+      const canViewAllEvidence = canImport
+      this.currentAccess = {
+        canImport,
+        canManage,
+        canViewAll: canImport,
+        canViewManagedFeedbacks,
+        canViewEvidence: canUploadEvidence || canViewAllEvidence
+      }
       this.setData({
         canImport,
         canManage,
+        canViewManagedFeedbacks,
+        canResolveFeedback,
+        canUploadEvidence,
+        canViewEvidence: canUploadEvidence || canViewAllEvidence,
+        canViewAllEvidence,
+        feedbackScopeText: canImport ? '全市所有反馈' : `${user.district || '本区县'}问题反馈`,
         managementScopeTitle: canImport ? '全市酬金总览' : '本区县酬金总览',
         managementScopeText: canImport ? '数据范围：全部区县' : `数据范围：${user.district || '授权区县'}`
       })
@@ -341,9 +396,14 @@ Page({
   },
 
   updateIdentityDisplay(user = {}, access = null) {
-    const roleText = access && Array.isArray(access.lineProjectRoles) && access.lineProjectRoles.includes('district_supervisor')
-      ? '集客线路基层监督员'
-      : workspace.getRoleText(user)
+    const roles = access && Array.isArray(access.lineProjectRoles) ? access.lineProjectRoles : []
+    const roleText = roles.includes('district_leader')
+      ? '集客线路区县主管'
+      : roles.includes('district_supervisor')
+        ? '集客线路基层监督员'
+        : roles.includes('district_manager')
+          ? '集客线路区县经理'
+          : workspace.getRoleText(user)
     const identityParts = [
       user.district || '区县未完善',
       user.gridName || '所属网格未完善',
@@ -366,10 +426,10 @@ Page({
 
     try {
       this.setData({ loading: true })
-      if (this.currentAccess && this.currentAccess.canImport) {
+      if (this.currentAccess && this.currentAccess.canViewManagedFeedbacks) {
         await Promise.all([
           this.loadManagementOverview(),
-          this.loadAdminFeedbacks()
+          this.loadManagedFeedbacks()
         ])
         return
       }
@@ -413,11 +473,23 @@ Page({
       return
     }
     try {
-      const data = await lineProjectService.callLineProject('dashboard', {
-        filters: this.data.filters
-      })
+      const [data, evidenceData] = await Promise.all([
+        lineProjectService.callLineProject('dashboard', { filters: this.data.filters }),
+        this.currentAccess.canViewEvidence
+          ? lineProjectService.callLineProject('listEvidence', {
+            filters: { settlementMonth: this.data.filters.settlementMonth }
+          }).catch(error => {
+            console.error('加载区县附件状态失败:', error)
+            return { records: [] }
+          })
+          : Promise.resolve({ records: [] })
+      ])
       this.setData({
-        managementOverview: buildManagementOverview(data, this.data.filters.settlementMonth)
+        managementOverview: buildManagementOverview(
+          data,
+          this.data.filters.settlementMonth,
+          evidenceData.records || []
+        )
       })
     } catch (error) {
       console.error('加载管理范围酬金总览失败:', error)
@@ -425,11 +497,11 @@ Page({
     }
   },
 
-  async loadAdminFeedbacks() {
+  async loadManagedFeedbacks() {
     const result = await wx.cloud.callFunction({
       name: 'salaryFeedback',
       data: {
-        action: 'listAdmin',
+        action: 'listManaged',
         data: {
           salaryMonth: this.data.filters.settlementMonth
         }
@@ -438,9 +510,25 @@ Page({
     if (!result.result || !result.result.success) {
       throw new Error((result.result && result.result.error) || '问题反馈加载失败')
     }
-    this.setData({
-      adminFeedbacks: buildAdminFeedbackList((result.result.data && result.result.data.records) || [])
-    })
+    const records = buildAdminFeedbackList((result.result.data && result.result.data.records) || [])
+    const fileIDs = [...new Set(records.reduce((list, item) => list.concat(item.resolutionFileIDs || []), []))]
+    if (fileIDs.length) {
+      const urlResult = await wx.cloud.getTempFileURL({ fileList: fileIDs })
+      const urlMap = {}
+      ;(urlResult.fileList || []).forEach(item => {
+        if (item.fileID && item.tempFileURL) urlMap[item.fileID] = item.tempFileURL
+      })
+      records.forEach(item => {
+        item.resolutionImageUrls = item.resolutionFileIDs.map(fileID => urlMap[fileID]).filter(Boolean)
+      })
+    }
+    this.setData({ managedFeedbacks: records })
+  },
+
+  previewManagedFeedbackImage(e) {
+    const record = this.data.managedFeedbacks[Number(e.currentTarget.dataset.recordIndex)]
+    const urls = record ? record.resolutionImageUrls || [] : []
+    wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
   },
 
   async loadFeedbackDecision() {
@@ -448,7 +536,7 @@ Page({
     if (!user) {
       return
     }
-    if (this.currentAccess && this.currentAccess.canImport) {
+    if (this.currentAccess && this.currentAccess.canViewManagedFeedbacks) {
       return
     }
 
@@ -507,7 +595,7 @@ Page({
       monthPickerValue: e.detail.value,
       'filters.settlementMonth': settlementMonth,
       managementOverview: buildDefaultManagementOverview(settlementMonth),
-      adminFeedbacks: [],
+      managedFeedbacks: [],
       overview: buildDefaultOverview(settlementMonth),
       feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
     }, () => {
@@ -579,17 +667,24 @@ Page({
   },
 
   navigateToFeedback() {
-    if (!this.data.feedbackDecision.canFeedback) {
-      this.showDecisionBlocked(this.data.feedbackDecision.feedbackBlockedReason)
-      return
-    }
-
     wx.navigateTo({
       url: `/pages/feedback/feedback?${lineProjectConfig.buildQueryString({
         workspaceType: FEEDBACK_CONTEXT.workspaceType,
         scene: FEEDBACK_CONTEXT.scene,
         salaryMonth: this.data.filters.settlementMonth,
-        salaryAmount: this.data.overview.summary.totalAmount
+        salaryAmount: this.data.overview.summary.totalAmount,
+        mode: 'submit'
+      })}`
+    })
+  },
+
+  navigateToFeedbackHandling() {
+    wx.navigateTo({
+      url: `/pages/feedback/feedback?${lineProjectConfig.buildQueryString({
+        workspaceType: FEEDBACK_CONTEXT.workspaceType,
+        scene: FEEDBACK_CONTEXT.scene,
+        salaryMonth: this.data.filters.settlementMonth,
+        mode: 'handle'
       })}`
     })
   },
@@ -606,6 +701,30 @@ Page({
     wx.navigateTo({
       url: `/pages/line-project/persons?${lineProjectConfig.buildQueryString({
         settlementMonth: this.data.filters.settlementMonth
+      })}`
+    })
+  },
+
+  navigateToEvidence() {
+    wx.navigateTo({
+      url: `/pages/line-project/evidence?${lineProjectConfig.buildQueryString({
+        settlementMonth: this.data.filters.settlementMonth
+      })}`
+    })
+  },
+
+  openDistrictEvidence(e) {
+    const district = String(e.currentTarget.dataset.district || '').trim()
+    const record = this.data.managementOverview.districtComposition.find(item => item.district === district)
+    if (!record || !record.hasEvidence) {
+      wx.showToast({ title: '该区县本月暂未上传证明材料', icon: 'none' })
+      return
+    }
+    wx.navigateTo({
+      url: `/pages/line-project/evidence?${lineProjectConfig.buildQueryString({
+        settlementMonth: this.data.filters.settlementMonth,
+        district,
+        mode: 'view'
       })}`
     })
   },

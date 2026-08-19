@@ -272,4 +272,19 @@ db.collection('line_project_active_versions').createIndex({
   name: 'line_project_active_batch_index'
 })
 
+db.collection('line_project_evidences').createIndex({
+  settlementMonth: 1,
+  district: 1,
+  createTime: -1
+}, {
+  name: 'line_project_evidence_scope_index'
+})
+
+db.collection('line_project_evidences').createIndex({
+  'uploader.openid': 1,
+  createTime: -1
+}, {
+  name: 'line_project_evidence_uploader_index'
+})
+
 console.log('数据库初始化完成')

@@ -15,7 +15,7 @@ const SALES_ROLE_TEXT = {
 
 const LINE_PROJECT_ROLE_TEXT = {
   sales_person: '集客装维人员',
-  district_manager: '集客线路区县主管',
+  district_manager: '集客线路区县经理',
   sales_department: '集客线路管理员',
   system_admin: '系统管理员'
 }
@@ -68,6 +68,12 @@ function getWorkspaceHomeUrl(input) {
 function getRoleText(user = {}) {
   if (isSystemAdmin(user)) {
     return '系统管理员'
+  }
+
+  if (isLineProjectWorkspace(user) && Array.isArray(user.lineProjectRoles)) {
+    if (user.lineProjectRoles.includes('district_leader')) return '集客线路区县主管'
+    if (user.lineProjectRoles.includes('district_supervisor')) return '集客线路基层监督员'
+    if (user.lineProjectRoles.includes('district_manager')) return '集客线路区县经理'
   }
 
   const roleMap = isLineProjectWorkspace(user) ? LINE_PROJECT_ROLE_TEXT : SALES_ROLE_TEXT

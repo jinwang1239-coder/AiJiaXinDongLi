@@ -18,7 +18,7 @@ Module._load = function load(request, parent, isMain) {
 }
 
 const service = require('./index').__test__
-const { APPROVAL_ROUTE_ROSTER } = require('./config')
+const { APPROVAL_ROUTE_ROSTER, DISTRICT_LEADER_ROSTER, SYSTEM_ADMIN_ROSTER } = require('./config')
 assert.strictEqual(APPROVAL_ROUTE_ROSTER.length, 9)
 assert.strictEqual(new Set(APPROVAL_ROUTE_ROSTER.map(item => item.district)).size, 9)
 assert(APPROVAL_ROUTE_ROSTER.every(item => (
@@ -26,12 +26,24 @@ assert(APPROVAL_ROUTE_ROSTER.every(item => (
   /^\d{11}$/.test(item.districtManager.gridAccount) &&
   item.supervisor.gridAccount !== item.districtManager.gridAccount
 )))
+assert.strictEqual(DISTRICT_LEADER_ROSTER.length, 9)
+assert.strictEqual(new Set(DISTRICT_LEADER_ROSTER.map(item => item.district)).size, 9)
+assert(DISTRICT_LEADER_ROSTER.every(item => /^\d{11}$/.test(item.gridAccount)))
+assert.strictEqual(SYSTEM_ADMIN_ROSTER.length, 2)
+assert(SYSTEM_ADMIN_ROSTER.every(item => /^\d{11}$/.test(item.gridAccount)))
 assert.strictEqual(service.isSystemAdmin({ role: 'system_admin' }), true)
 assert.strictEqual(service.isSystemAdmin({ role: 'sales_person', realName: '系统管理员' }), false)
 assert.strictEqual(service.canImportLineProject({ role: 'system_admin' }), true)
 assert.strictEqual(service.canImportLineProject({ role: 'sales_department' }), true)
 assert.strictEqual(service.canImportLineProject({ role: 'district_manager' }), false)
 assert.strictEqual(service.canImportLineProject({ role: 'sales_person' }), false)
+assert.deepStrictEqual(service.normalizeEvidenceFileIDs([
+  'cloud://env/a.jpg',
+  'cloud://env/a.jpg',
+  'https://invalid.example/a.jpg'
+]), ['cloud://env/a.jpg'])
+assert.strictEqual(service.resolveEvidenceDistrict({ managedDistricts: ['沙市区'] }), '沙市区')
+assert.throws(() => service.resolveEvidenceDistrict({ managedDistricts: ['沙市区'] }, '江陵'), /本人管理区县/)
 assert.strictEqual(service.resolveRecordOwner({ usersByGridAccount: {} }, {
   gridAccount: '13277377736', personName: '文雄', district: '沙市区'
 }).bindingStatus, 'pending_claim')
@@ -47,6 +59,7 @@ assert.strictEqual(service.resolveRecordOwner({ usersByGridAccount: {
 }).matched, false)
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b2', 'b1'] }, ['b1', 'b2']), true)
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: [] }, ['b1']), false)
+assert.strictEqual(service.getEffectiveFeedbackStatus({ status: 'resolved', resolution: { content: '已答复' } }), 'resolved')
 assert.strictEqual(service.getRecordAmount({ importedAmount: 10, calculatedAmount: 99 }), 10)
 assert.strictEqual(service.getRecordAmount({ calculatedAmount: 9.99 }), 9.99)
 const fileHash = service.createFileHash(Buffer.from('same-file'))

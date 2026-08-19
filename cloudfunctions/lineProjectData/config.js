@@ -127,6 +127,24 @@ const APPROVAL_ROUTE_ROSTER = [
   { district: '石首', supervisor: { name: '鲁浩', gridAccount: '13508622998' }, districtManager: { name: '刘建康', gridAccount: '15272602322' } }
 ]
 
+// 当前由区县主管暂代基层监督员；两类角色保持独立，后续可分别调整名单。
+const DISTRICT_LEADER_ROSTER = [
+  { district: '荆州区', name: '王灿', gridAccount: '18071888614' },
+  { district: '沙市区', name: '赵青', gridAccount: '13986655569' },
+  { district: '开发区', name: '杨芳', gridAccount: '13545648553' },
+  { district: '监利', name: '王娟', gridAccount: '13697247000' },
+  { district: '洪湖', name: '邹方艳', gridAccount: '18772699601' },
+  { district: '松滋', name: '朱锦纯', gridAccount: '18272229353' },
+  { district: '公安', name: '李雄', gridAccount: '18272201885' },
+  { district: '江陵', name: '黄刚', gridAccount: '15927919510' },
+  { district: '石首', name: '鲁浩', gridAccount: '13508622998' }
+]
+
+const SYSTEM_ADMIN_ROSTER = [
+  { name: '张斌', gridAccount: '18707123688' },
+  { name: '刘炽', gridAccount: '13995951983' }
+]
+
 module.exports = {
   CURRENT_MAJOR_CATEGORY,
   CURRENT_SUBCATEGORY,
@@ -138,5 +156,7 @@ module.exports = {
   ITEM_COLUMN_MAP,
   MODULE_CONFIGS,
   TEMPLATE_META,
-  APPROVAL_ROUTE_ROSTER
+  APPROVAL_ROUTE_ROSTER,
+  DISTRICT_LEADER_ROSTER,
+  SYSTEM_ADMIN_ROSTER
 }

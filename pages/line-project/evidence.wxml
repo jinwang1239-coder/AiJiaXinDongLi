@@ -1,0 +1,65 @@
+<navigation-bar title="{{navTitle}}" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+
+<scroll-view class="page-container" scroll-y>
+  <view class="evidence-page">
+    <view class="card month-card">
+      <view class="card-header">
+        <view class="card-title">结算月份</view>
+        <button class="btn btn-secondary mini-btn" bindtap="loadRecords" loading="{{loading}}">刷新</button>
+      </view>
+      <picker mode="date" value="{{monthPickerValue}}" bindchange="onMonthChange">
+        <view class="month-picker">{{settlementMonth}}</view>
+      </picker>
+      <view class="scope-text">{{scopeText}}</view>
+    </view>
+
+    <view wx:if="{{canUpload}}" class="card upload-card">
+      <view class="card-title">上传证明图片</view>
+      <view class="notice">图片仅作为证明材料保存，系统不识别、不分析图片内容。</view>
+      <view wx:if="{{selectedImages.length}}" class="image-grid">
+        <view class="image-item" wx:for="{{selectedImages}}" wx:key="tempFilePath">
+          <image class="evidence-image" src="{{item.tempFilePath}}" mode="aspectFill" data-index="{{index}}" bindtap="previewSelectedImage" />
+          <view class="remove-image" data-index="{{index}}" catchtap="removeSelectedImage">×</view>
+        </view>
+      </view>
+      <button wx:if="{{selectedImages.length < 9}}" class="btn btn-secondary action-btn" bindtap="chooseImages">选择图片</button>
+      <button class="btn btn-primary action-btn" bindtap="submitEvidence" loading="{{uploading}}" disabled="{{!selectedImages.length}}">提交证明材料</button>
+    </view>
+
+    <view class="card records-card">
+      <view class="records-header">
+        <view class="card-title">已提交材料</view>
+        <view class="record-count">{{records.length}} 条</view>
+      </view>
+      <view wx:if="{{records.length}}" class="record-list">
+        <view class="record-item" wx:for="{{records}}" wx:key="_id" wx:for-index="recordIndex">
+          <view class="record-title">{{item.district}} · {{item.uploaderName}}</view>
+          <view class="record-meta">{{item.createTimeText}} · {{item.totalImageCount}} 张</view>
+          <view wx:if="{{item.imageUrls.length}}" class="image-grid record-images">
+            <image
+              class="evidence-image"
+              wx:for="{{item.imageUrls}}"
+              wx:key="*this"
+              wx:for-item="imageUrl"
+              wx:for-index="imageIndex"
+              src="{{imageUrl}}"
+              mode="aspectFill"
+              data-record-index="{{recordIndex}}"
+              data-image-index="{{imageIndex}}"
+              bindtap="previewRecordImage"
+            />
+          </view>
+          <view wx:if="{{item.failedImageCount}}" class="image-error">{{item.failedImageCount}} 张图片暂时无法加载，请点击刷新重试</view>
+        </view>
+      </view>
+      <view wx:else class="empty-text">{{district ? '该区县本月暂无证明材料' : '当前月份暂无证明材料'}}</view>
+    </view>
+  </view>
+</scroll-view>
+
+<view wx:if="{{previewVisible}}" class="image-preview-mask" bindtap="closeImagePreview" catchtouchmove="stopPropagation">
+  <view class="image-preview-content">
+    <view class="image-preview-close">关闭预览</view>
+    <image class="image-preview-main" src="{{previewUrl}}" mode="aspectFit" binderror="onPreviewImageError" />
+  </view>
+</view>

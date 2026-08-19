@@ -21,6 +21,9 @@
         <button class="btn btn-secondary admin-import-btn" bindtap="navigateToManagement">本区县数据看板</button>
         <view wx:if="{{managedDistrictsText}}" class="workspace-meta">管理范围：{{managedDistrictsText}}</view>
       </view>
+      <view wx:if="{{canUploadEvidence}}" class="workspace-admin">
+        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToEvidence">本区县证明材料</button>
+      </view>
     </view>
 
     <view class="card month-card">
@@ -69,23 +72,31 @@
           </view>
           <view class="district-track"><view class="district-bar" style="width: {{item.percent}}%;"></view></view>
           <view class="district-detail">{{item.workOrderCount}} 个工单 · {{item.peopleCount}} 人 · {{item.recordCount}} 条明细</view>
+          <view wx:if="{{canViewEvidence}}" class="district-evidence" data-district="{{item.district}}" bindtap="openDistrictEvidence">
+            <view class="district-evidence-text">
+              附件材料：{{item.evidenceText}}
+            </view>
+            <view wx:if="{{item.hasEvidence}}" class="district-evidence-link">查看</view>
+          </view>
         </view>
       </view>
 
       <button class="btn btn-primary management-detail-btn" bindtap="navigateToManagement">查看工单及人员明细</button>
     </view>
 
-    <view wx:if="{{canImport}}" class="card admin-feedback-card">
+    <view wx:if="{{canViewManagedFeedbacks}}" class="card admin-feedback-card">
       <view class="admin-feedback-header">
         <view>
           <view class="admin-feedback-title">问题反馈明细</view>
-          <view class="admin-feedback-subtitle">{{filters.settlementMonth}} · 全市所有反馈</view>
+          <view class="admin-feedback-subtitle">{{filters.settlementMonth}} · {{feedbackScopeText}}</view>
         </view>
-        <view class="admin-feedback-count">{{adminFeedbacks.length}} 条</view>
+        <view class="admin-feedback-count">{{managedFeedbacks.length}} 条</view>
       </view>
 
-      <view wx:if="{{adminFeedbacks.length}}" class="admin-feedback-list">
-        <view class="admin-feedback-item" wx:for="{{adminFeedbacks}}" wx:key="_id">
+      <button wx:if="{{canResolveFeedback}}" class="btn btn-primary management-detail-btn" bindtap="navigateToFeedbackHandling">进入问题工单处理</button>
+
+      <view wx:if="{{managedFeedbacks.length}}" class="admin-feedback-list">
+        <view class="admin-feedback-item" wx:for="{{managedFeedbacks}}" wx:for-index="feedbackIndex" wx:key="_id">
           <view class="admin-feedback-item-header">
             <view class="admin-feedback-person">{{item.submitterName}}</view>
             <view class="status-pill {{item.statusClass}}">{{item.statusText}}</view>
@@ -93,17 +104,16 @@
           <view class="admin-feedback-meta">{{item.district}} · {{item.submitterAccount}} · ￥{{item.amountText}}</view>
           <view class="admin-feedback-meta">关联范围：{{item.workOrderText}}</view>
           <view class="admin-feedback-content">{{item.content}}</view>
-          <view class="admin-review-grid">
-            <view class="admin-review-item">
-              <view class="admin-review-role">区县经理 · {{item.managerName}}</view>
-              <view class="status-pill {{item.managerStatusClass}}">{{item.managerStatusText}}</view>
-              <view wx:if="{{item.managerNote}}" class="admin-feedback-meta">{{item.managerNote}}</view>
+          <view wx:if="{{item.isResolved}}" class="admin-review-item admin-resolution-item">
+            <view class="admin-review-role">{{item.resolutionHandlerText}}已反馈</view>
+            <view wx:if="{{item.resolutionContent}}" class="admin-feedback-meta">{{item.resolutionContent}}</view>
+            <view wx:if="{{item.resolutionImageUrls.length}}" class="admin-feedback-images">
+              <image wx:for="{{item.resolutionImageUrls}}" wx:for-item="imageUrl" wx:for-index="imageIndex" wx:key="*this" class="admin-feedback-image" src="{{imageUrl}}" mode="aspectFill" data-record-index="{{feedbackIndex}}" data-image-index="{{imageIndex}}" bindtap="previewManagedFeedbackImage" />
             </view>
-            <view class="admin-review-item">
-              <view class="admin-review-role">基层监督员 · {{item.supervisorName}}</view>
-              <view class="status-pill {{item.supervisorStatusClass}}">{{item.supervisorStatusText}}</view>
-              <view wx:if="{{item.supervisorNote}}" class="admin-feedback-meta">{{item.supervisorNote}}</view>
-            </view>
+            <view wx:if="{{item.resolutionTimeText}}" class="admin-feedback-meta">反馈时间：{{item.resolutionTimeText}}</view>
+          </view>
+          <view wx:else class="admin-review-item admin-resolution-item">
+            <view class="admin-review-role">{{item.waitingText}}</view>
           </view>
           <view class="admin-feedback-time">提交时间：{{item.createTimeText}}</view>
         </view>

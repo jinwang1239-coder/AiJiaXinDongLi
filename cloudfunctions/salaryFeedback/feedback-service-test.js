@@ -38,6 +38,19 @@ assert.strictEqual(service.getEffectiveFeedbackStatus({
   managerReview: { status: 'approved' },
   supervisorReview: { status: 'pending' }
 }), 'approved')
+assert.strictEqual(service.getEffectiveFeedbackStatus({
+  status: 'resolved',
+  resolution: { content: '已解释' }
+}), 'resolved')
+assert.deepStrictEqual(service.normalizeFeedbackStatus({
+  status: 'approved',
+  managerReview: { status: 'approved', name: '处理人', reviewNote: '历史答复' }
+}).resolution.content, '历史答复')
+assert.strictEqual(service.getPendingReviewType({
+  status: 'pending',
+  managerReview: { status: 'pending', gridAccount: '100' },
+  supervisorReview: { status: 'pending', gridAccount: '200' }
+}, '200'), 'supervisor')
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b2', 'b1'] }, ['b1', 'b2']), true)
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b1'] }, ['b2']), false)
 

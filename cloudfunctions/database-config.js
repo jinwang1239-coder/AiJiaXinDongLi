@@ -205,6 +205,23 @@ module.exports = {
       ]
     },
     {
+      name: 'line_project_evidences',
+      description: '集客线路区县证明图片记录',
+      fields: {
+        settlementMonth: 'string',
+        district: 'string',
+        fileIDs: 'array',
+        status: 'string',
+        uploader: 'object',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { settlementMonth: 1, district: 1, createTime: -1 } },
+        { keys: { 'uploader.openid': 1, createTime: -1 } }
+      ]
+    },
+    {
       name: 'salary_feedbacks',
       description: '薪酬反馈表',
       fields: {
@@ -269,6 +286,7 @@ module.exports = {
         district: 'string',
         districtManager: 'object',
         supervisor: 'object',
+        districtLeader: 'object',
         status: 'string',
         createTime: 'date',
         updateTime: 'date'
@@ -312,6 +330,10 @@ module.exports = {
       write: false
     },
     line_project_active_versions: {
+      read: false,
+      write: false
+    },
+    line_project_evidences: {
       read: false,
       write: false
     },

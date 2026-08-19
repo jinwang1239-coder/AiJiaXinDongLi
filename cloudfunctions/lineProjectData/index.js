@@ -8,7 +8,9 @@ const {
   SUBCATEGORY_TO_MAJOR,
   ITEM_COLUMN_MAP,
   MODULE_CONFIGS,
-  APPROVAL_ROUTE_ROSTER
+  APPROVAL_ROUTE_ROSTER,
+  DISTRICT_LEADER_ROSTER,
+  SYSTEM_ADMIN_ROSTER
 } = require('./config')
 
 cloud.init({
@@ -25,6 +27,7 @@ const COLLECTIONS = {
   FEEDBACKS: 'salary_feedbacks',
   MONTH_CONFIRMS: 'line_project_month_confirms',
   ROUTES: 'feedback_routes',
+  EVIDENCES: 'line_project_evidences',
   AUDIT_LOGS: 'line_project_audit_logs',
   ACTIVE_VERSIONS: 'line_project_active_versions'
 }
@@ -82,7 +85,12 @@ exports.main = async (event) => {
       case 'getAccessProfile':
         return await getAccessProfile(wxContext)
       case 'syncSupervisorRoutes':
+      case 'syncAccessRoster':
         return await syncSupervisorRoutes(wxContext)
+      case 'createEvidence':
+        return await createEvidence(wxContext, data)
+      case 'listEvidence':
+        return await listEvidence(wxContext, data)
       case 'rollbackImportBatch':
         return await rollbackImportBatch(wxContext, data)
       case 'test':
@@ -180,7 +188,7 @@ async function resolveAccess(user = {}) {
   const admin = isSystemAdmin(user)
   const canImport = canImportLineProject(user)
   const managedDistricts = new Set()
-  const roles = new Set(Array.isArray(user.lineProjectRoles) ? user.lineProjectRoles : [])
+  const roles = new Set()
 
   if (user.role === 'district_manager' && user.district) {
     managedDistricts.add(user.district)
@@ -205,6 +213,15 @@ async function resolveAccess(user = {}) {
       managedDistricts.add(configuredRoute.district)
       roles.add('district_manager')
     }
+    const configuredLeader = DISTRICT_LEADER_ROSTER.find(item => (
+      item.district === user.district &&
+      item.gridAccount === user.gridAccount &&
+      normalizeText(item.name) === normalizeText(user.realName)
+    ))
+    if (configuredLeader) {
+      managedDistricts.add(configuredLeader.district)
+      roles.add('district_leader')
+    }
     const routes = await getActiveFeedbackRoutes()
     routes.forEach(route => {
       if (
@@ -219,14 +236,31 @@ async function resolveAccess(user = {}) {
         managedDistricts.add(route.district)
         roles.add('district_manager')
       }
+      if (
+        getRouteAccount(route.districtLeader) === user.gridAccount &&
+        (!route.districtLeader.name || normalizeText(route.districtLeader.name) === normalizeText(user.realName)) &&
+        route.district === user.district
+      ) {
+        managedDistricts.add(route.district)
+        roles.add('district_leader')
+      }
     })
   }
+
+  const canViewManagedFeedbacks = canImport || ['district_supervisor', 'district_leader', 'district_manager']
+    .some(role => roles.has(role))
+  const canUploadEvidence = !admin && ['district_leader', 'district_manager'].some(role => roles.has(role)) && managedDistricts.size > 0
+  const canViewAllEvidence = canImport
 
   return {
     isSystemAdmin: admin,
     canImport,
     canManage: canImport || managedDistricts.size > 0,
     canViewAll: canImport,
+    canViewManagedFeedbacks,
+    canUploadEvidence,
+    canViewEvidence: canViewAllEvidence || canUploadEvidence,
+    canViewAllEvidence,
     managedDistricts: [...managedDistricts].filter(Boolean).sort(),
     lineProjectRoles: [...roles]
   }
@@ -246,8 +280,10 @@ async function getAccessProfile(wxContext) {
 
 async function grantLineProjectAccess(user, lineProjectRole, district, now = new Date()) {
   if (!user || !user._id) return false
-  const roles = new Set(Array.isArray(user.lineProjectRoles) ? user.lineProjectRoles : [])
-  const districts = new Set(Array.isArray(user.managedDistricts) ? user.managedDistricts : [])
+  const latestResult = await db.collection(COLLECTIONS.USERS).doc(user._id).get()
+  const latestUser = latestResult.data || user
+  const roles = new Set(Array.isArray(latestUser.lineProjectRoles) ? latestUser.lineProjectRoles : [])
+  const districts = new Set(Array.isArray(latestUser.managedDistricts) ? latestUser.managedDistricts : [])
   roles.add(lineProjectRole)
   districts.add(district)
   await db.collection(COLLECTIONS.USERS).doc(user._id).update({
@@ -261,6 +297,18 @@ async function grantLineProjectAccess(user, lineProjectRole, district, now = new
   return true
 }
 
+async function grantSystemAdminAccess(user, now = new Date()) {
+  if (!user || !user._id) return false
+  await db.collection(COLLECTIONS.USERS).doc(user._id).update({
+    data: {
+      role: SYSTEM_ADMIN_ROLE,
+      workspaceType: WORKSPACE_TYPES.LINE_PROJECT,
+      updateTime: now
+    }
+  })
+  return true
+}
+
 async function syncSupervisorRoutes(wxContext) {
   const user = await ensureUser(wxContext.OPENID)
   ensureImportRole(user)
@@ -268,6 +316,7 @@ async function syncSupervisorRoutes(wxContext) {
   const results = []
 
   for (const route of APPROVAL_ROUTE_ROSTER) {
+    const districtLeader = DISTRICT_LEADER_ROSTER.find(item => item.district === route.district)
     const routeResult = await db.collection(COLLECTIONS.ROUTES).where({
       district: route.district
     }).get()
@@ -276,6 +325,7 @@ async function syncSupervisorRoutes(wxContext) {
       district: route.district,
       supervisor: route.supervisor,
       districtManager: route.districtManager,
+      districtLeader: districtLeader || null,
       status: 'active',
       source: 'approval_route_roster_202608',
       updateTime: now
@@ -295,9 +345,12 @@ async function syncSupervisorRoutes(wxContext) {
       })
     }
 
-    const [supervisorResult, managerResult] = await Promise.all([
+    const [supervisorResult, managerResult, leaderResult] = await Promise.all([
       db.collection(COLLECTIONS.USERS).where({ gridAccount: route.supervisor.gridAccount }).limit(2).get(),
-      db.collection(COLLECTIONS.USERS).where({ gridAccount: route.districtManager.gridAccount }).limit(2).get()
+      db.collection(COLLECTIONS.USERS).where({ gridAccount: route.districtManager.gridAccount }).limit(2).get(),
+      districtLeader
+        ? db.collection(COLLECTIONS.USERS).where({ gridAccount: districtLeader.gridAccount }).limit(2).get()
+        : Promise.resolve({ data: [] })
     ])
     const supervisorUser = (supervisorResult.data || []).find(item => (
       normalizeText(item.realName) === normalizeText(route.supervisor.name) && item.district === route.district
@@ -305,22 +358,35 @@ async function syncSupervisorRoutes(wxContext) {
     const managerUser = (managerResult.data || []).find(item => (
       normalizeText(item.realName) === normalizeText(route.districtManager.name) && item.district === route.district
     ))
-    await Promise.all([
-      grantLineProjectAccess(supervisorUser, 'district_supervisor', route.district, now),
-      grantLineProjectAccess(managerUser, 'district_manager', route.district, now)
-    ])
+    const leaderUser = (leaderResult.data || []).find(item => (
+      normalizeText(item.realName) === normalizeText(districtLeader && districtLeader.name) && item.district === route.district
+    ))
+    await grantLineProjectAccess(supervisorUser, 'district_supervisor', route.district, now)
+    await grantLineProjectAccess(managerUser, 'district_manager', route.district, now)
+    await grantLineProjectAccess(leaderUser, 'district_leader', route.district, now)
 
     results.push({
       ...route,
       supervisorMatched: !!supervisorUser,
-      districtManagerMatched: !!managerUser
+      districtManagerMatched: !!managerUser,
+      districtLeaderMatched: !!leaderUser
     })
+  }
+
+  const systemAdminMatches = []
+  for (const admin of SYSTEM_ADMIN_ROSTER) {
+    const adminResult = await db.collection(COLLECTIONS.USERS).where({ gridAccount: admin.gridAccount }).limit(2).get()
+    const adminUser = (adminResult.data || []).find(item => normalizeText(item.realName) === normalizeText(admin.name))
+    await grantSystemAdminAccess(adminUser, now)
+    systemAdminMatches.push({ ...admin, matched: !!adminUser })
   }
 
   await writeAuditLog(user, 'sync_approval_routes', {
     total: results.length,
     matchedSupervisors: results.filter(item => item.supervisorMatched).length,
     matchedDistrictManagers: results.filter(item => item.districtManagerMatched).length,
+    matchedDistrictLeaders: results.filter(item => item.districtLeaderMatched).length,
+    matchedSystemAdmins: systemAdminMatches.filter(item => item.matched).length,
     districts: results.map(item => item.district)
   })
 
@@ -330,7 +396,126 @@ async function syncSupervisorRoutes(wxContext) {
       total: results.length,
       matchedSupervisors: results.filter(item => item.supervisorMatched).length,
       matchedDistrictManagers: results.filter(item => item.districtManagerMatched).length,
-      records: results
+      matchedDistrictLeaders: results.filter(item => item.districtLeaderMatched).length,
+      matchedSystemAdmins: systemAdminMatches.filter(item => item.matched).length,
+      records: results,
+      systemAdmins: systemAdminMatches
+    }
+  }
+}
+
+function normalizeEvidenceFileIDs(fileIDs = []) {
+  return [...new Set((Array.isArray(fileIDs) ? fileIDs : [])
+    .map(item => String(item || '').trim())
+    .filter(item => item.startsWith('cloud://')))]
+}
+
+function resolveEvidenceDistrict(access = {}, requestedDistrict = '') {
+  const districts = access.managedDistricts || []
+  const district = String(requestedDistrict || districts[0] || '').trim()
+  if (!district || !districts.includes(district)) {
+    throw new Error('只能提交本人管理区县的证明材料')
+  }
+  return district
+}
+
+async function createEvidence(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  const access = await resolveAccess(user)
+  if (!access.canUploadEvidence) throw new Error('仅区县主管或区县经理可以上传证明材料')
+
+  const fileIDs = normalizeEvidenceFileIDs(data.fileIDs)
+  if (!fileIDs.length) throw new Error('请先选择证明图片')
+  if (fileIDs.length > 9) throw new Error('单次最多上传9张证明图片')
+
+  const settlementMonth = String(data.settlementMonth || '').trim()
+  if (!/^\d{4}-\d{2}$/.test(settlementMonth)) throw new Error('结算月份格式不正确')
+  const district = resolveEvidenceDistrict(access, data.district)
+  const now = new Date()
+  const evidence = {
+    settlementMonth,
+    district,
+    fileIDs,
+    status: 'submitted',
+    uploader: buildUserSnapshot(user),
+    createTime: now,
+    updateTime: now
+  }
+
+  let result
+  try {
+    result = await db.collection(COLLECTIONS.EVIDENCES).add({ data: evidence })
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) throw new Error('请先创建 line_project_evidences 数据库集合')
+    throw error
+  }
+  await writeAuditLog(user, 'create_evidence', { evidenceId: result._id, settlementMonth, district, imageCount: fileIDs.length })
+  return { success: true, data: { evidenceId: result._id } }
+}
+
+async function attachEvidenceImageUrls(records = []) {
+  const fileIDs = normalizeEvidenceFileIDs(records.reduce((list, item) => list.concat(item.fileIDs || []), []))
+  const urlMap = {}
+  for (let index = 0; index < fileIDs.length; index += 50) {
+    try {
+      const result = await cloud.getTempFileURL({ fileList: fileIDs.slice(index, index + 50) })
+      ;(result.fileList || []).forEach(item => {
+        if (item.fileID && item.tempFileURL) urlMap[item.fileID] = item.tempFileURL
+      })
+    } catch (error) {
+      console.error('生成证明材料临时地址失败:', error)
+    }
+  }
+  return records.map(item => {
+    const recordFileIDs = normalizeEvidenceFileIDs(item.fileIDs)
+    const imageUrls = recordFileIDs.map(fileID => urlMap[fileID]).filter(Boolean)
+    return {
+      ...item,
+      imageUrls,
+      failedImageCount: recordFileIDs.length - imageUrls.length
+    }
+  })
+}
+
+async function listEvidence(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  const access = await resolveAccess(user)
+  if (!access.canViewEvidence) throw new Error('当前账号没有查看证明材料的权限')
+
+  const filters = data.filters || {}
+  const query = {}
+  if (filters.settlementMonth) query.settlementMonth = String(filters.settlementMonth).trim()
+  if (filters.district) {
+    const district = String(filters.district).trim()
+    if (!access.canViewAllEvidence && !access.managedDistricts.includes(district)) {
+      throw new Error('当前账号没有查看该区县证明材料的权限')
+    }
+    query.district = district
+  }
+
+  let records = []
+  try {
+    records = await fetchAllRecords(db.collection(COLLECTIONS.EVIDENCES).where(query))
+  } catch (error) {
+    if (!isCollectionNotFoundError(error)) throw error
+  }
+  if (!access.canViewAllEvidence) {
+    records = records.filter(item => access.managedDistricts.includes(item.district))
+  }
+  const visibleRecords = records
+    .filter(item => item.status !== 'inactive')
+    .sort((left, right) => new Date(right.createTime || 0) - new Date(left.createTime || 0))
+  const evidenceRecords = await attachEvidenceImageUrls(visibleRecords)
+
+  return {
+    success: true,
+    data: {
+      canUpload: access.canUploadEvidence,
+      canViewAll: access.canViewAllEvidence,
+      records: evidenceRecords
+        .map(item => ({ ...item, createTimeText: formatDateTime(item.createTime) }))
     }
   }
 }
@@ -449,6 +634,7 @@ function isProcessingFeedbackStatus(status) {
 }
 
 function getEffectiveFeedbackStatus(record = {}) {
+  if (record.resolution || record.status === 'resolved') return 'resolved'
   const managerStatus = record.managerReview && record.managerReview.status
   const supervisorStatus = record.supervisorReview && record.supervisorReview.status
   if (managerStatus === 'rejected' || supervisorStatus === 'rejected') return 'rejected'
@@ -636,7 +822,7 @@ async function fetchAllRecords(query) {
   return records
 }
 
-async function getLatestLineProjectFeedback(openid, settlementMonth, activeBatchNos = []) {
+async function getLatestLineProjectFeedback(openid, settlementMonth) {
   let records = []
   try {
     records = await fetchAllRecords(
@@ -654,8 +840,7 @@ async function getLatestLineProjectFeedback(openid, settlementMonth, activeBatch
       return false
     }
 
-    return String(record.salaryMonth || '').trim() === settlementMonth &&
-      hasSameBatchVersion(record, activeBatchNos)
+    return String(record.salaryMonth || '').trim() === settlementMonth
   }).sort((left, right) => new Date(right.createTime || 0).getTime() - new Date(left.createTime || 0).getTime())
 
   return matchedRecords[0] || null
@@ -1929,7 +2114,7 @@ async function confirmMonth(wxContext, data = {}) {
     throw new Error('当前数据版本已完成签字确认')
   }
 
-  const latestFeedback = await getLatestLineProjectFeedback(user.openid, settlementMonth, importBatchNos)
+  const latestFeedback = await getLatestLineProjectFeedback(user.openid, settlementMonth)
   if (latestFeedback && isProcessingFeedbackStatus(getEffectiveFeedbackStatus(latestFeedback))) {
     throw new Error('当前月份存在待处理反馈，暂不能签字确认')
   }
@@ -2265,5 +2450,8 @@ module.exports.__test__ = {
   buildRecordImportKey,
   isBatchLockActive,
   createFileHash,
-  buildDashboardBreakdowns
+  buildDashboardBreakdowns,
+  normalizeEvidenceFileIDs,
+  resolveEvidenceDistrict,
+  getEffectiveFeedbackStatus
 }

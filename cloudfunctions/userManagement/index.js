@@ -342,12 +342,15 @@ async function resolveLineProjectAccess(user = {}) {
 
   if (gridAccount) {
     try {
-      const [supervisorResult, managerResult] = await Promise.all([
+      const [supervisorResult, managerResult, leaderResult] = await Promise.all([
         db.collection('feedback_routes').where({
           'supervisor.gridAccount': gridAccount
         }).get(),
         db.collection('feedback_routes').where({
           'districtManager.gridAccount': gridAccount
+        }).get(),
+        db.collection('feedback_routes').where({
+          'districtLeader.gridAccount': gridAccount
         }).get()
       ])
 
@@ -369,6 +372,16 @@ async function resolveLineProjectAccess(user = {}) {
         ))
         .forEach(route => {
           roles.add('district_manager')
+          if (route.district) managedDistricts.add(route.district)
+        })
+      ;(leaderResult.data || [])
+        .filter(route => (
+          route.status !== 'inactive' &&
+          route.district === user.district &&
+          (!route.districtLeader.name || String(route.districtLeader.name).trim() === String(user.realName || '').trim())
+        ))
+        .forEach(route => {
+          roles.add('district_leader')
           if (route.district) managedDistricts.add(route.district)
         })
     } catch (error) {
