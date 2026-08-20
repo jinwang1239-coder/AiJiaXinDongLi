@@ -83,7 +83,7 @@ function normalizeSubCategory(value = '', fallback = '') {
 function buildCommissionCompositionText(totalAmount = 0, composition = []) {
   const amountMap = {}
   ;(composition || []).forEach(item => { if (item && item.subCategory) amountMap[item.subCategory] = Number(item.amount || 0) })
-  return `总酬金（${formatMoney(totalAmount)}元）=${SUBCATEGORY_OPTIONS.map(subCategory => `${subCategory}（${formatMoney(amountMap[subCategory] || 0)}元）`).join('+')}`
+  return `总工费（${formatMoney(totalAmount)}元）=${SUBCATEGORY_OPTIONS.map(subCategory => `${subCategory}（${formatMoney(amountMap[subCategory] || 0)}元）`).join('+')}`
 }
 
 function buildGroupedWorkloadItems(actualItems = []) {

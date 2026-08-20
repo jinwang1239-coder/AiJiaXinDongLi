@@ -95,7 +95,7 @@
           </view>
           <view class="stats-tile">
             <view class="stats-number money">￥{{previewResult.summary.importedAmountTotal}}</view>
-            <view class="stats-label">导入薪酬</view>
+            <view class="stats-label">导入工费</view>
           </view>
           <view class="stats-tile">
             <view class="stats-number money">￥{{previewResult.summary.calculatedAmountTotal}}</view>
@@ -108,7 +108,7 @@
           <view class="mini-list">
             <view class="mini-item" wx:for="{{previewResult.moduleSummaries}}" wx:key="subCategory">
               <view class="mini-title">{{item.subCategory}}</view>
-              <view class="mini-sub">有效 {{item.successRows}} 行 · 待认领 {{item.pendingClaimRows}} 行 · 错误 {{item.errorRows}} 行 · {{item.businessQtyText}} · 薪酬 ￥{{item.importedAmountTotal}}</view>
+              <view class="mini-sub">有效 {{item.successRows}} 行 · 待认领 {{item.pendingClaimRows}} 行 · 错误 {{item.errorRows}} 行 · {{item.businessQtyText}} · 工费 ￥{{item.importedAmountTotal}}</view>
             </view>
           </view>
         </view>
@@ -184,7 +184,7 @@
           <view class="mini-item" wx:for="{{batches}}" wx:key="batchNo">
             <view class="mini-title">{{item.sourceFileName}}</view>
             <view class="mini-sub">{{item.createTimeText}} · 状态 {{item.status}}{{item.isActive ? '（当前生效）' : ''}} · 进度 {{item.writtenRows || 0}}/{{item.totalRows}}</view>
-            <view class="mini-sub">成功 {{item.successRows}} 行，导入时待认领 {{item.pendingClaimRows || 0}} 行，替换 {{item.replacedRows}} 行，导入薪酬 ￥{{item.importedAmountTotalText}}</view>
+            <view class="mini-sub">成功 {{item.successRows}} 行，导入时待认领 {{item.pendingClaimRows || 0}} 行，替换 {{item.replacedRows}} 行，导入工费 ￥{{item.importedAmountTotalText}}</view>
             <button wx:if="{{item.canRollback}}" class="btn btn-secondary mini-btn" data-batch-no="{{item.batchNo}}" bindtap="rollbackBatch">回滚该批次</button>
           </view>
         </view>

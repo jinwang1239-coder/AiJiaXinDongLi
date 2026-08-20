@@ -25,7 +25,7 @@
       <view class="overview-hero-grid">
         <view class="overview-tile primary-tile overview-amount-tile">
           <view class="overview-value">￥{{overview.totalAmountText}}</view>
-          <view class="overview-label">本人{{filters.subCategory || '集客线路'}}酬金</view>
+          <view class="overview-label">本人{{filters.subCategory || '集客线路'}}工费</view>
         </view>
       </view>
 
@@ -110,7 +110,7 @@
       <view class="detail-summary">
         <view class="detail-code">工单号：{{detail.summary.workOrderCode || '未识别工单号'}}</view>
         <view class="detail-title">{{detail.summary.workOrderSubject || detail.summary.workOrderNameRaw}}</view>
-        <view class="detail-line">本人酬金：￥{{detail.summary.totalAmountText}}</view>
+        <view class="detail-line">本人工费：￥{{detail.summary.totalAmountText}}</view>
         <view wx:if="{{detail.summary.subCategory !== '集客开通'}}" class="detail-line">业务量：{{detail.summary.businessQtyTotal}}</view>
         <view wx:if="{{detail.summary.completionDateText}}" class="detail-line">完成日期：{{detail.summary.completionDateText}}</view>
         <view wx:if="{{detail.summary.companyCategory}}" class="detail-line">公司分类：{{detail.summary.companyCategory}}</view>

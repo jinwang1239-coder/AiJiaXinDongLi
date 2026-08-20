@@ -184,7 +184,7 @@ function filterDataByRole(data, userRole, userId, userDistrict, userGridAccount 
   
   switch (userRole) {
     case 'sales_person':
-      // 销售师傅只能看自己的数据
+      // 爱家工程师只能看自己的数据
       return data.filter(item => {
         const ownerOpenid = item.owner && item.owner.openid
         const ownerGridAccount = item.owner && item.owner.gridAccount

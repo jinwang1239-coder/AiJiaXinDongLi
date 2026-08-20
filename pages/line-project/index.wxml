@@ -1,4 +1,4 @@
-<navigation-bar title="集客线路酬金" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="集客线路工费" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y>
   <view class="line-project-page">
@@ -46,7 +46,7 @@
         <view class="management-month">{{managementOverview.settlementMonth}}</view>
       </view>
 
-      <view class="management-total-label">导入薪酬</view>
+      <view class="management-total-label">导入工费</view>
       <view class="management-total">￥{{managementOverview.totalAmountText}}</view>
       <view class="management-stats">
         <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalWorkOrders}}</view><view class="management-stat-label">工单数</view></view>
@@ -55,7 +55,7 @@
         <view class="management-stat"><view class="management-stat-value">{{managementOverview.totalBusinessQty}}</view><view class="management-stat-label">标准业务量</view></view>
       </view>
 
-      <view class="management-section-title">五模块薪酬构成</view>
+      <view class="management-section-title">五模块工费构成</view>
       <view class="management-module-grid">
         <view class="management-module" wx:for="{{managementOverview.moduleComposition}}" wx:key="subCategory">
           <view class="management-module-name">{{item.subCategory}}</view>
@@ -64,7 +64,7 @@
       </view>
 
       <view wx:if="{{managementOverview.districtComposition.length}}" class="management-districts">
-        <view class="management-section-title">区县薪酬分布</view>
+        <view class="management-section-title">区县工费分布</view>
         <view class="district-row" wx:for="{{managementOverview.districtComposition}}" wx:key="district">
           <view class="district-meta">
             <view class="district-name">{{item.district}}</view>
@@ -122,7 +122,7 @@
     </view>
 
     <view wx:else class="card summary-card">
-      <view class="summary-label">我的本月总酬金</view>
+      <view class="summary-label">我的本月总工费</view>
       <view class="summary-amount">￥{{overview.summary.totalAmountText}}</view>
 
       <view class="summary-formula">

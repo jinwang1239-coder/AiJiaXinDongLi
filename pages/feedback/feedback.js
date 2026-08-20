@@ -24,9 +24,9 @@ const FEEDBACK_CONTEXTS = {
     historyTitle: '我的问题工单',
     pendingTitle: '待处理问题工单',
     monthFieldLabel: '结算月份',
-    amountFieldLabel: '本人酬金',
+    amountFieldLabel: '本人工费',
     submitButtonText: '提交反馈',
-    textareaPlaceholder: '请输入本月酬金疑问或反馈说明',
+    textareaPlaceholder: '请输入本月工费疑问或反馈说明',
     recordTitleSuffix: '集客线路问题工单'
   }
 }
@@ -66,7 +66,7 @@ Page({
       content: '',
       workOrderIndex: 0
     },
-    workOrderOptions: [{ label: '整月薪酬', workOrderKey: '' }],
+    workOrderOptions: [{ label: '整月工费', workOrderKey: '' }],
     myFeedbacks: [],
     pendingFeedbacks: []
   },
@@ -337,7 +337,7 @@ Page({
     this.setData({
       monthCommission: this.formatMoney(data.summary && data.summary.totalAmount),
       workOrderOptions: [
-        { label: '整月薪酬', workOrderKey: '' },
+        { label: '整月工费', workOrderKey: '' },
         ...(workOrders.records || []).map(item => ({
           label: `${item.subCategory || ''} ${item.workOrderCode || '未识别工单号'} ${item.workOrderSubject || item.workOrderNameRaw}`,
           workOrderKey: item.workOrderKey

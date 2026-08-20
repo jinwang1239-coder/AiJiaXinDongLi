@@ -1112,7 +1112,7 @@ function parseModuleSheet(worksheet, moduleConfig, context = {}) {
     }
 
     const checkStatus = layout !== 'workload' || Math.abs(amountDiff) <= moduleConfig.amountTolerance ? 'matched' : 'mismatch'
-    const checkMessage = checkStatus === 'matched' ? '' : `系统重算金额 ${calculatedAmount.toFixed(2)} 与导入薪酬金额 ${importedAmount.toFixed(2)} 不一致`
+    const checkMessage = checkStatus === 'matched' ? '' : `系统重算金额 ${calculatedAmount.toFixed(2)} 与导入工费金额 ${importedAmount.toFixed(2)} 不一致`
     const record = {
       settlementMonth,
       majorCategory,
@@ -2385,7 +2385,7 @@ function buildWorkOrderExportRows(records = []) {
     区县: item.district || item.districts.join('、'),
     参与人数: item.participantCount,
     业务量: item.businessQtyTotal,
-    工单酬金: item.totalAmount,
+    工单工费: item.totalAmount,
     工作量摘要: item.workloadSummary
   }))
 }
@@ -2403,7 +2403,7 @@ function buildRawExportRows(records = []) {
     公司分类: record.companyCategory,
     站点级别: record.siteLevel,
     端别: record.endpoint,
-    导入薪酬金额: getRecordAmount(record),
+    导入工费金额: getRecordAmount(record),
     系统重算金额: record.calculatedAmount,
     差异: record.amountDiff,
     工作量明细: (record.workloadItems || []).map(item => `${item.itemName}${item.qty}${item.unit}`).join('；')

@@ -94,7 +94,7 @@ function getCommissionConfig(userRole) {
   const configs = {
     'sales_person': {
       rate: 0.05, // 5%
-      name: '销售师傅'
+      name: '爱家工程师'
     },
     'district_manager': {
       rate: 0.03, // 3%

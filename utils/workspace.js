@@ -7,7 +7,7 @@ const SYSTEM_ADMIN_ROLE = 'system_admin'
 const PREFERRED_WORKSPACE_KEY = 'preferredWorkspaceType'
 
 const SALES_ROLE_TEXT = {
-  sales_person: '销售师傅',
+  sales_person: '爱家工程师',
   district_manager: '区县主管',
   sales_department: '销售业务部',
   system_admin: '系统管理员'

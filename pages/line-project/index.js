@@ -94,7 +94,7 @@ function buildAdminFeedbackList(records = []) {
       resolutionImageUrls: [],
       workOrderText: workOrder.workOrderKey
         ? `${workOrder.subCategory || ''} · ${workOrder.workOrderCode || workOrder.workOrderSubject || workOrder.workOrderNameRaw || '关联工单'}`
-        : '整月薪酬'
+        : '整月工费'
     }
   })
 }
@@ -104,7 +104,7 @@ function buildDefaultFeedbackDecision(settlementMonth) {
     settlementMonth,
     statusText: '待确认',
     statusClass: 'status-pending',
-    detailText: '本月酬金核对无误可签字确认，如有疑问请提交问题反馈。',
+    detailText: '本月工费核对无误可签字确认，如有疑问请提交问题反馈。',
     subText: '',
     canConfirm: true,
     confirmBlockedReason: '',
@@ -138,7 +138,7 @@ function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPubl
     state.statusClass = 'status-approved'
     state.detailText = confirmRecord.confirmTimeText
       ? `已于 ${confirmRecord.confirmTimeText} 完成签字确认。`
-      : '本月酬金已完成签字确认。'
+      : '本月工费已完成签字确认。'
     state.subText = `确认金额：￥${lineProjectConfig.formatMoney(confirmRecord.amount)}`
     state.canConfirm = false
     state.confirmBlockedReason = '本月已完成签字确认'
@@ -199,7 +199,7 @@ function buildDefaultOverview(settlementMonth) {
       totalRecords: 0,
       compositionText: lineProjectConfig.buildCommissionCompositionText(0, []),
       composition: [],
-      formulaTitle: `总酬金（${lineProjectConfig.formatMoney(0)}元） =`,
+      formulaTitle: `总工费（${lineProjectConfig.formatMoney(0)}元） =`,
       compositionDisplay
     }
   }
@@ -270,7 +270,7 @@ Page({
     canViewEvidence: false,
     canViewAllEvidence: false,
     feedbackScopeText: '',
-    managementScopeTitle: '管理范围酬金总览',
+    managementScopeTitle: '管理范围工费总览',
     managementScopeText: '',
     managedDistrictsText: '',
     monthPickerValue: lineProjectConfig.toMonthPickerValue(),
@@ -356,7 +356,7 @@ Page({
         feedbackScopeText: access.canViewAll
           ? '全市所有反馈'
           : `${(access.managedDistricts || []).join('、')}问题反馈`,
-        managementScopeTitle: access.canViewAll ? '全市酬金总览' : '本区县酬金总览',
+        managementScopeTitle: access.canViewAll ? '全市工费总览' : '本区县工费总览',
         managementScopeText: access.canViewAll
           ? '数据范围：全部区县'
           : `数据范围：${(access.managedDistricts || []).join('、')}`,
@@ -388,7 +388,7 @@ Page({
         canViewEvidence: canUploadEvidence || canViewAllEvidence,
         canViewAllEvidence,
         feedbackScopeText: canImport ? '全市所有反馈' : `${user.district || '本区县'}问题反馈`,
-        managementScopeTitle: canImport ? '全市酬金总览' : '本区县酬金总览',
+        managementScopeTitle: canImport ? '全市工费总览' : '本区县工费总览',
         managementScopeText: canImport ? '数据范围：全部区县' : `数据范围：${user.district || '授权区县'}`
       })
     }
@@ -451,7 +451,7 @@ Page({
             totalRecords: Number(data.summary && data.summary.totalRecords) || 0,
             compositionText: lineProjectConfig.buildCommissionCompositionText(totalAmount, composition),
             composition,
-            formulaTitle: `总酬金（${lineProjectConfig.formatMoney(totalAmount)}元） =`,
+            formulaTitle: `总工费（${lineProjectConfig.formatMoney(totalAmount)}元） =`,
             compositionDisplay
           }
         }
@@ -492,7 +492,7 @@ Page({
         )
       })
     } catch (error) {
-      console.error('加载管理范围酬金总览失败:', error)
+      console.error('加载管理范围工费总览失败:', error)
       wx.showToast({ title: error.message || '管理总览加载失败', icon: 'none' })
     }
   },
@@ -637,7 +637,7 @@ Page({
 
     wx.showModal({
       title: '签字确认',
-      content: `确认 ${this.data.filters.settlementMonth} 本人总酬金无误并完成签字确认吗？`,
+      content: `确认 ${this.data.filters.settlementMonth} 本人总工费无误并完成签字确认吗？`,
       success: async res => {
         if (!res.confirm) {
           return
