@@ -29,16 +29,8 @@
         </view>
       </view>
 
-      <view class="overview-grid">
+      <view wx:if="{{filters.subCategory && filters.subCategory !== '集客开通'}}" class="overview-grid">
         <view class="overview-tile">
-          <view class="overview-value">{{overview.totalWorkOrders}}</view>
-          <view class="overview-label">参与工单数</view>
-        </view>
-        <view class="overview-tile">
-          <view class="overview-value">{{overview.totalRecords}}</view>
-          <view class="overview-label">明细条数</view>
-        </view>
-        <view wx:if="{{filters.subCategory && filters.subCategory !== '集客开通'}}" class="overview-tile">
           <view class="overview-value">{{overview.businessQtyTotal}}</view>
           <view class="overview-label">业务量</view>
         </view>

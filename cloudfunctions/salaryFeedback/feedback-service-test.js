@@ -53,5 +53,10 @@ assert.strictEqual(service.getPendingReviewType({
 }, '200'), 'supervisor')
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b2', 'b1'] }, ['b1', 'b2']), true)
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b1'] }, ['b2']), false)
+assert.strictEqual(service.isMonthlyFeedbackLimitEnabled({ workspaceType: 'line_project' }), false)
+process.env.LINE_PROJECT_MONTHLY_FEEDBACK_LIMIT_ENABLED = 'true'
+assert.strictEqual(service.isMonthlyFeedbackLimitEnabled({ workspaceType: 'line_project' }), true)
+assert.strictEqual(service.isMonthlyFeedbackLimitEnabled({ workspaceType: 'sales' }), false)
+delete process.env.LINE_PROJECT_MONTHLY_FEEDBACK_LIMIT_ENABLED
 
 console.log('salaryFeedback 纯函数测试通过')

@@ -822,7 +822,7 @@ async function fetchAllRecords(query) {
   return records
 }
 
-async function getLatestLineProjectFeedback(openid, settlementMonth) {
+async function getLineProjectFeedbacks(openid, settlementMonth) {
   let records = []
   try {
     records = await fetchAllRecords(
@@ -830,20 +830,18 @@ async function getLatestLineProjectFeedback(openid, settlementMonth) {
     )
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
-      return null
+      return []
     }
     throw error
   }
 
-  const matchedRecords = records.filter(record => {
+  return records.filter(record => {
     if (!isLineProjectFeedbackRecord(record)) {
       return false
     }
 
     return String(record.salaryMonth || '').trim() === settlementMonth
   }).sort((left, right) => new Date(right.createTime || 0).getTime() - new Date(left.createTime || 0).getTime())
-
-  return matchedRecords[0] || null
 }
 
 function getActiveBatchNos(records = []) {
@@ -2114,8 +2112,8 @@ async function confirmMonth(wxContext, data = {}) {
     throw new Error('当前数据版本已完成签字确认')
   }
 
-  const latestFeedback = await getLatestLineProjectFeedback(user.openid, settlementMonth)
-  if (latestFeedback && isProcessingFeedbackStatus(getEffectiveFeedbackStatus(latestFeedback))) {
+  const feedbacks = await getLineProjectFeedbacks(user.openid, settlementMonth)
+  if (feedbacks.some(item => isProcessingFeedbackStatus(getEffectiveFeedbackStatus(item)))) {
     throw new Error('当前月份存在待处理反馈，暂不能签字确认')
   }
 

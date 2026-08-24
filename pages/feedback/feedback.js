@@ -359,9 +359,10 @@ Page({
   async loadMyFeedbacks() {
     const resultData = await this.callFeedbackFunction('listMine', this.buildFeedbackPayload())
     const records = await this.fillResolutionImageUrls(this.buildFeedbackList(resultData.records || []))
+    const monthlyLimitEnabled = !!resultData.monthlyLimitEnabled
     this.setData({
       myFeedbacks: records,
-      hasSubmittedThisMonth: this.isLineProjectContext() && records.some(item => item.salaryMonth === this.data.monthLabel)
+      hasSubmittedThisMonth: monthlyLimitEnabled && records.some(item => item.salaryMonth === this.data.monthLabel)
     })
   },
 

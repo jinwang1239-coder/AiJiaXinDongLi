@@ -71,6 +71,11 @@ function getCurrentMonthLabel() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+function isMonthlyFeedbackLimitEnabled(context = {}) {
+  return context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT &&
+    String(process.env.LINE_PROJECT_MONTHLY_FEEDBACK_LIMIT_ENABLED || 'false').trim().toLowerCase() === 'true'
+}
+
 function normalizeMoney(value) {
   const amount = Number(value || 0)
   return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0
@@ -400,7 +405,7 @@ async function findApproverByGridAccount(gridAccount, district) {
   return user
 }
 
-async function getLatestFeedbackBySubmitter(openid, context, salaryMonth = '') {
+async function getFeedbacksBySubmitter(openid, context, salaryMonth = '') {
   let records = []
   try {
     records = await fetchAll(
@@ -408,12 +413,12 @@ async function getLatestFeedbackBySubmitter(openid, context, salaryMonth = '') {
     )
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
-      return null
+      return []
     }
     throw error
   }
 
-  const matchedRecords = sortByCreateTimeDesc(records.filter(record => {
+  return sortByCreateTimeDesc(records.filter(record => {
     if (!matchContext(record, context)) {
       return false
     }
@@ -424,8 +429,11 @@ async function getLatestFeedbackBySubmitter(openid, context, salaryMonth = '') {
 
     return true
   }))
+}
 
-  return matchedRecords[0] || null
+async function getLatestFeedbackBySubmitter(openid, context, salaryMonth = '') {
+  const records = await getFeedbacksBySubmitter(openid, context, salaryMonth)
+  return records[0] || null
 }
 
 async function getExistingLineProjectConfirm(openid, salaryMonth, context) {
@@ -586,11 +594,13 @@ async function createFeedback(wxContext, data = {}) {
       }
     }
 
-    const latestFeedback = await getLatestFeedbackBySubmitter(openid, context, salaryMonth)
-    if (latestFeedback) {
-      return {
-        success: false,
-        error: '本月已提交过反馈，请勿重复提交'
+    if (isMonthlyFeedbackLimitEnabled(context)) {
+      const latestFeedback = await getLatestFeedbackBySubmitter(openid, context, salaryMonth)
+      if (latestFeedback) {
+        return {
+          success: false,
+          error: '本月已提交过反馈，请勿重复提交'
+        }
       }
     }
   }
@@ -688,6 +698,7 @@ async function listMyFeedbacks(wxContext, data = {}) {
     data: {
       context,
       title: getContextTitle(context),
+      monthlyLimitEnabled: isMonthlyFeedbackLimitEnabled(context),
       records: sortByCreateTimeDesc(records.filter(record => matchContext(record, context)))
         .map(normalizeFeedbackStatus)
     }
@@ -842,7 +853,8 @@ async function getSceneSummary(wxContext, data = {}) {
   const currentUser = await getCurrentUser(openid)
   const context = resolveContext(data, currentUser)
   const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
-  const record = await getLatestFeedbackBySubmitter(openid, context, salaryMonth)
+  const records = await getFeedbacksBySubmitter(openid, context, salaryMonth)
+  const record = records.find(item => getEffectiveFeedbackStatus(item) === 'pending') || records[0] || null
 
   return {
     success: true,
@@ -1068,5 +1080,6 @@ module.exports.__test__ = {
   getEffectiveFeedbackStatus,
   normalizeFeedbackStatus,
   hasSameBatchVersion,
-  getPendingReviewType
+  getPendingReviewType,
+  isMonthlyFeedbackLimitEnabled
 }

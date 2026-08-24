@@ -141,17 +141,6 @@
         </view>
       </view>
 
-      <view class="summary-stats">
-        <view class="summary-stat">
-          <view class="summary-stat-value">{{overview.summary.totalWorkOrders}}</view>
-          <view class="summary-stat-label">参与工单</view>
-        </view>
-        <view class="summary-stat">
-          <view class="summary-stat-value">{{overview.summary.totalRecords}}</view>
-          <view class="summary-stat-label">明细条数</view>
-        </view>
-      </view>
-
       <view class="summary-feedback">
         <view class="summary-feedback-header">
           <view class="summary-feedback-title">确认反馈</view>
