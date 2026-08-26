@@ -287,4 +287,13 @@ db.collection('line_project_evidences').createIndex({
   name: 'line_project_evidence_uploader_index'
 })
 
+db.collection('line_project_evidences').createIndex({
+  settlementMonth: 1,
+  district: 1,
+  workOrderKey: 1,
+  createTime: -1
+}, {
+  name: 'line_project_evidence_project_index'
+})
+
 console.log('数据库初始化完成')

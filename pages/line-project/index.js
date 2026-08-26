@@ -218,16 +218,23 @@ function buildDefaultManagementOverview(settlementMonth) {
   }
 }
 
-function buildManagementOverview(data = {}, settlementMonth = '', evidenceRecords = []) {
+function buildManagementOverview(data = {}, settlementMonth = '', evidenceData = {}) {
   const stats = data.stats || {}
   const totalAmount = Number(stats.totalAmount || 0)
+  const evidenceRecords = evidenceData.records || []
+  const statusMap = {}
+  ;(evidenceData.districtStatuses || []).forEach(item => {
+    if (item.district) statusMap[item.district] = item
+  })
   const evidenceMap = {}
   ;(evidenceRecords || []).forEach(record => {
     const district = String(record.district || '').trim()
     if (!district) return
-    if (!evidenceMap[district]) evidenceMap[district] = { uploadCount: 0, imageCount: 0 }
+    if (!evidenceMap[district]) evidenceMap[district] = { uploadCount: 0, imageCount: 0, projectKeys: new Set() }
     evidenceMap[district].uploadCount += 1
     evidenceMap[district].imageCount += Array.isArray(record.fileIDs) ? record.fileIDs.length : 0
+    const projectKey = record.workOrderKey || (record.relatedProject && record.relatedProject.workOrderKey)
+    if (projectKey) evidenceMap[district].projectKeys.add(projectKey)
   })
   return {
     settlementMonth,
@@ -238,17 +245,25 @@ function buildManagementOverview(data = {}, settlementMonth = '', evidenceRecord
     totalBusinessQty: Number(stats.totalBusinessQty || 0),
     moduleComposition: buildCompositionDisplay(data.moduleComposition || []),
     districtComposition: (data.districtComposition || []).map(item => {
-      const evidence = evidenceMap[item.district] || { uploadCount: 0, imageCount: 0 }
+      const evidence = evidenceMap[item.district] || { uploadCount: 0, imageCount: 0, projectKeys: new Set() }
+      const evidenceStatus = (statusMap[item.district] && statusMap[item.district].status) || 'unconfirmed'
+      const projectCount = evidence.projectKeys.size
       return {
         ...item,
         amountText: lineProjectConfig.formatMoney(item.amount),
         percent: totalAmount > 0 ? Math.max(2, Math.round(Number(item.amount || 0) / totalAmount * 100)) : 0,
         evidenceUploadCount: evidence.uploadCount,
         evidenceImageCount: evidence.imageCount,
+        evidenceProjectCount: projectCount,
+        evidenceStatus,
         hasEvidence: evidence.uploadCount > 0,
         evidenceText: evidence.uploadCount > 0
-          ? `已上传${evidence.uploadCount}次 · 共${evidence.imageCount}张`
-          : '本月暂未上传'
+          ? projectCount > 0
+            ? `已关联${projectCount}个项目 · ${evidence.uploadCount}组材料 · ${evidence.imageCount}张图片`
+            : `历史未关联材料${evidence.uploadCount}组 · ${evidence.imageCount}张图片`
+          : evidenceStatus === 'no_special_scenario'
+            ? '已确认本月无特殊场景'
+            : '本月特殊场景状态未确认'
       }
     })
   }
@@ -488,7 +503,7 @@ Page({
         managementOverview: buildManagementOverview(
           data,
           this.data.filters.settlementMonth,
-          evidenceData.records || []
+          evidenceData
         )
       })
     } catch (error) {
@@ -717,7 +732,12 @@ Page({
     const district = String(e.currentTarget.dataset.district || '').trim()
     const record = this.data.managementOverview.districtComposition.find(item => item.district === district)
     if (!record || !record.hasEvidence) {
-      wx.showToast({ title: '该区县本月暂未上传证明材料', icon: 'none' })
+      wx.showToast({
+        title: record && record.evidenceStatus === 'no_special_scenario'
+          ? '该区县已确认本月无特殊场景'
+          : '该区县本月特殊场景状态未确认',
+        icon: 'none'
+      })
       return
     }
     wx.navigateTo({

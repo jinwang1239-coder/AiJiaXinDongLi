@@ -79,6 +79,24 @@
           <view wx:if="{{item.businessQty}}" class="workload-row">业务量：{{item.businessQty}} {{item.endpoint}} {{item.siteLevel}}</view>
           <view wx:for="{{item.workloadItems}}" wx:key="itemCode" class="workload-row">{{item.itemName}}：{{item.qty}}{{item.unit}} × ￥{{item.unitPriceText}} = ￥{{item.amountText}}</view>
         </view>
+        <view wx:if="{{detail.evidenceRecords.length}}" class="evidence-section">
+          <view class="evidence-title">关联附件材料</view>
+          <view class="evidence-record" wx:for="{{detail.evidenceRecords}}" wx:key="_id" wx:for-item="evidence">
+            <view class="workload-row">{{evidence.uploaderName}} · {{evidence.createTimeText}}</view>
+            <view class="evidence-images">
+              <image
+                wx:for="{{evidence.imageUrls}}"
+                wx:key="*this"
+                wx:for-item="imageUrl"
+                class="evidence-image"
+                src="{{imageUrl}}"
+                mode="aspectFill"
+                data-url="{{imageUrl}}"
+                bindtap="previewEvidenceImage"
+              />
+            </view>
+          </view>
+        </view>
       </view>
     </scroll-view>
   </view>

@@ -54,6 +54,109 @@
   line-height: 1.6;
 }
 
+.month-status {
+  margin-top: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  background: #f5f8f7;
+  color: #42645c;
+  font-size: 24rpx;
+}
+
+.status-no_special_scenario {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.status-has_project_materials {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.project-search-row {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.project-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 18rpx 20rpx;
+  border: 2rpx solid #dbe7e3;
+  border-radius: 16rpx;
+  background: #f8fafc;
+  color: #243447;
+  font-size: 25rpx;
+}
+
+.project-search-btn {
+  width: 150rpx;
+  margin: 0;
+  padding: 0;
+}
+
+.selected-project,
+.project-results {
+  margin-top: 16rpx;
+}
+
+.selected-project {
+  padding: 20rpx;
+  border: 2rpx solid #8ad6c2;
+  border-radius: 18rpx;
+  background: #effbf7;
+}
+
+.selected-project-label,
+.project-result-action {
+  color: #078669;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.selected-project-code,
+.project-result-code {
+  margin-top: 8rpx;
+  color: #172b3f;
+  font-size: 28rpx;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.selected-project-title,
+.project-result-title {
+  margin-top: 8rpx;
+  color: #405269;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.project-result {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx;
+  border: 1rpx solid #dce9e5;
+  border-radius: 18rpx;
+  background: #f8faf9;
+}
+
+.project-result + .project-result {
+  margin-top: 12rpx;
+}
+
+.project-result-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-result-meta {
+  margin-top: 8rpx;
+  color: #718096;
+  font-size: 22rpx;
+}
+
 .image-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -105,11 +208,35 @@
   margin-top: 20rpx;
 }
 
+.project-group {
+  padding: 20rpx;
+  border: 1rpx solid #dce9e5;
+  border-radius: 20rpx;
+  background: #f7faf9;
+}
+
+.project-group + .project-group {
+  margin-top: 20rpx;
+}
+
+.project-title {
+  color: #172b3f;
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+.project-meta {
+  margin-top: 8rpx;
+  color: #718096;
+  font-size: 23rpx;
+}
+
 .record-item {
+  margin-top: 16rpx;
   padding: 20rpx;
   border: 1rpx solid #e4eeeb;
   border-radius: 20rpx;
-  background: #f7faf9;
+  background: #ffffff;
 }
 
 .record-item + .record-item {

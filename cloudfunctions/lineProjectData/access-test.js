@@ -45,6 +45,15 @@ assert.deepStrictEqual(service.normalizeEvidenceFileIDs([
 ]), ['cloud://env/a.jpg'])
 assert.strictEqual(service.resolveEvidenceDistrict({ managedDistricts: ['沙市区'] }), '沙市区')
 assert.throws(() => service.resolveEvidenceDistrict({ managedDistricts: ['沙市区'] }, '江陵'), /本人管理区县/)
+assert.strictEqual(service.getEvidenceRecordType({ fileIDs: ['cloud://env/legacy.jpg'] }), 'legacy_material')
+assert.strictEqual(service.getEvidenceRecordType({ workOrderKey: 'work_1' }), 'project_material')
+assert.deepStrictEqual(service.buildEvidenceDistrictStatuses([
+  { district: '沙市区', workOrderKey: 'work_1', fileIDs: ['cloud://env/a.jpg'] },
+  { district: '江陵', recordType: 'no_special_scenario', fileIDs: [] }
+], ['沙市区', '江陵']).map(item => ({ district: item.district, status: item.status })), [
+  { district: '江陵', status: 'no_special_scenario' },
+  { district: '沙市区', status: 'has_project_materials' }
+])
 assert.strictEqual(service.resolveRecordOwner({ usersByGridAccount: {} }, {
   gridAccount: '13277377736', personName: '文雄', district: '沙市区'
 }).bindingStatus, 'pending_claim')

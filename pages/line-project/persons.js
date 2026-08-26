@@ -181,7 +181,12 @@ Page({
             amountText: lineProjectConfig.formatMoney(item.amount),
             workloadItems: decorateWorkloadItems(item.workloadItems || [])
           })),
-          workOrders: withMoney(data.workOrders || [], 'workorder')
+          workOrders: withMoney(data.workOrders || [], 'workorder'),
+          evidenceRecords: (data.evidenceRecords || []).map(item => ({
+            ...item,
+            uploaderName: (item.uploader && (item.uploader.realName || item.uploader.gridAccount)) || '未知人员',
+            imageUrls: (item.imageUrls || []).filter(url => /^https?:\/\//i.test(url))
+          }))
         }
       })
     } catch (error) {
@@ -194,6 +199,13 @@ Page({
   },
 
   stopPropagation() {},
+
+  previewEvidenceImage(e) {
+    const url = e.currentTarget.dataset.url
+    const urls = (this.data.detail && this.data.detail.evidenceRecords || [])
+      .flatMap(item => item.imageUrls || [])
+    if (url && urls.length) wx.previewImage({ current: url, urls })
+  },
 
   async exportData() {
     if (this.data.exporting) return

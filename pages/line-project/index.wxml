@@ -18,11 +18,7 @@
         <button class="btn btn-secondary admin-import-btn" bindtap="navigateToManagement">全市数据看板</button>
       </view>
       <view wx:elif="{{canManage}}" class="workspace-admin">
-        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToManagement">本区县数据看板</button>
         <view wx:if="{{managedDistrictsText}}" class="workspace-meta">管理范围：{{managedDistrictsText}}</view>
-      </view>
-      <view wx:if="{{canUploadEvidence}}" class="workspace-admin">
-        <button class="btn btn-secondary admin-import-btn" bindtap="navigateToEvidence">本区县证明材料</button>
       </view>
     </view>
 
@@ -81,7 +77,10 @@
         </view>
       </view>
 
-      <button class="btn btn-primary management-detail-btn" bindtap="navigateToManagement">查看工单及人员明细</button>
+      <view class="management-actions">
+        <button class="btn btn-primary management-detail-btn" bindtap="navigateToManagement">查看工单及人员明细</button>
+        <button wx:if="{{canUploadEvidence}}" class="btn btn-secondary management-detail-btn" bindtap="navigateToEvidence">本区县附件材料</button>
+      </view>
     </view>
 
     <view wx:if="{{canViewManagedFeedbacks}}" class="card admin-feedback-card">

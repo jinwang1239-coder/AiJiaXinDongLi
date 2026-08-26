@@ -206,10 +206,13 @@ module.exports = {
     },
     {
       name: 'line_project_evidences',
-      description: '集客线路区县证明图片记录',
+      description: '集客线路区县项目附件材料记录',
       fields: {
+        recordType: 'string',
         settlementMonth: 'string',
         district: 'string',
+        workOrderKey: 'string',
+        relatedProject: 'object',
         fileIDs: 'array',
         status: 'string',
         uploader: 'object',
@@ -218,6 +221,7 @@ module.exports = {
       },
       indexes: [
         { keys: { settlementMonth: 1, district: 1, createTime: -1 } },
+        { keys: { settlementMonth: 1, district: 1, workOrderKey: 1, createTime: -1 } },
         { keys: { 'uploader.openid': 1, createTime: -1 } }
       ]
     },

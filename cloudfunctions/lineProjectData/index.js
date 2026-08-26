@@ -89,6 +89,8 @@ exports.main = async (event) => {
         return await syncSupervisorRoutes(wxContext)
       case 'createEvidence':
         return await createEvidence(wxContext, data)
+      case 'confirmNoSpecialScenario':
+        return await confirmNoSpecialScenario(wxContext, data)
       case 'listEvidence':
         return await listEvidence(wxContext, data)
       case 'rollbackImportBatch':
@@ -414,28 +416,108 @@ function resolveEvidenceDistrict(access = {}, requestedDistrict = '') {
   const districts = access.managedDistricts || []
   const district = String(requestedDistrict || districts[0] || '').trim()
   if (!district || !districts.includes(district)) {
-    throw new Error('只能提交本人管理区县的证明材料')
+    throw new Error('只能提交本人管理区县的附件材料')
   }
   return district
+}
+
+function getEvidenceRecordType(record = {}) {
+  if (record.recordType) return record.recordType
+  return record.workOrderKey || (record.relatedProject && record.relatedProject.workOrderKey)
+    ? 'project_material'
+    : 'legacy_material'
+}
+
+async function getScopedEvidenceRecords(access = {}, filters = {}) {
+  const query = {}
+  if (filters.settlementMonth) query.settlementMonth = String(filters.settlementMonth).trim()
+  if (filters.district) {
+    const district = String(filters.district).trim()
+    if (!access.canViewAllEvidence && !access.managedDistricts.includes(district)) {
+      throw new Error('当前账号没有查看该区县附件材料的权限')
+    }
+    query.district = district
+  }
+
+  let records = []
+  try {
+    records = await fetchAllRecords(db.collection(COLLECTIONS.EVIDENCES).where(query))
+  } catch (error) {
+    if (!isCollectionNotFoundError(error)) throw error
+  }
+
+  return records
+    .filter(item => item.status !== 'inactive')
+    .filter(item => access.canViewAllEvidence || access.managedDistricts.includes(item.district))
+    .filter(item => !filters.workOrderKey || (
+      item.workOrderKey === filters.workOrderKey ||
+      (item.relatedProject && item.relatedProject.workOrderKey === filters.workOrderKey)
+    ))
+    .sort((left, right) => new Date(right.createTime || 0) - new Date(left.createTime || 0))
+}
+
+function buildEvidenceDistrictStatuses(records = [], districts = []) {
+  return [...new Set([
+    ...(districts || []),
+    ...records.map(item => item.district)
+  ].filter(Boolean))].sort().map(district => {
+    const districtRecords = records.filter(item => item.district === district)
+    const materials = districtRecords.filter(item => getEvidenceRecordType(item) !== 'no_special_scenario')
+    const confirmation = districtRecords.find(item => getEvidenceRecordType(item) === 'no_special_scenario')
+    const projectKeys = new Set(materials.map(item => (
+      item.workOrderKey || (item.relatedProject && item.relatedProject.workOrderKey)
+    )).filter(Boolean))
+    return {
+      district,
+      status: materials.length ? 'has_project_materials' : confirmation ? 'no_special_scenario' : 'unconfirmed',
+      projectCount: projectKeys.size,
+      materialCount: materials.length,
+      imageCount: materials.reduce((sum, item) => sum + normalizeEvidenceFileIDs(item.fileIDs).length, 0),
+      confirmTimeText: confirmation ? formatDateTime(confirmation.updateTime || confirmation.createTime) : ''
+    }
+  })
 }
 
 async function createEvidence(wxContext, data = {}) {
   const user = await ensureUser(wxContext.OPENID)
   ensureLineProjectWorkspace(user)
   const access = await resolveAccess(user)
-  if (!access.canUploadEvidence) throw new Error('仅区县主管或区县经理可以上传证明材料')
+  if (!access.canUploadEvidence) throw new Error('仅区县主管或区县经理可以上传附件材料')
 
   const fileIDs = normalizeEvidenceFileIDs(data.fileIDs)
-  if (!fileIDs.length) throw new Error('请先选择证明图片')
-  if (fileIDs.length > 9) throw new Error('单次最多上传9张证明图片')
+  if (!fileIDs.length) throw new Error('请先选择附件图片')
+  if (fileIDs.length > 9) throw new Error('单次最多上传9张附件图片')
 
   const settlementMonth = String(data.settlementMonth || '').trim()
   if (!/^\d{4}-\d{2}$/.test(settlementMonth)) throw new Error('结算月份格式不正确')
   const district = resolveEvidenceDistrict(access, data.district)
-  const now = new Date()
-  const evidence = {
+  const workOrderKey = String(data.workOrderKey || '').trim()
+  if (!workOrderKey) throw new Error('请选择关联项目')
+
+  const { records: projectRecords } = await getScopedRecords(wxContext, {
     settlementMonth,
     district,
+    workOrderKey
+  }, 'role')
+  const project = aggregateByWorkOrder(projectRecords)[0]
+  if (!project) throw new Error('关联项目不存在或不在当前管理范围内')
+
+  const now = new Date()
+  const evidence = {
+    recordType: 'project_material',
+    settlementMonth,
+    district,
+    workOrderKey,
+    relatedProject: {
+      workOrderKey: project.workOrderKey,
+      workOrderCode: project.workOrderCode || '',
+      workOrderSubject: project.workOrderSubject || '',
+      workOrderNameRaw: project.workOrderNameRaw || '',
+      subCategory: project.subCategory || '',
+      district: project.district || district,
+      totalAmount: project.totalAmount,
+      participantCount: project.participantCount
+    },
     fileIDs,
     status: 'submitted',
     uploader: buildUserSnapshot(user),
@@ -450,8 +532,53 @@ async function createEvidence(wxContext, data = {}) {
     if (isCollectionNotFoundError(error)) throw new Error('请先创建 line_project_evidences 数据库集合')
     throw error
   }
-  await writeAuditLog(user, 'create_evidence', { evidenceId: result._id, settlementMonth, district, imageCount: fileIDs.length })
+  const confirmations = (await getScopedEvidenceRecords(access, { settlementMonth, district }))
+    .filter(item => getEvidenceRecordType(item) === 'no_special_scenario')
+  await Promise.all(confirmations.map(item => db.collection(COLLECTIONS.EVIDENCES).doc(item._id).update({
+    data: { status: 'inactive', updateTime: now }
+  })))
+  await writeAuditLog(user, 'create_evidence', {
+    evidenceId: result._id,
+    settlementMonth,
+    district,
+    workOrderKey,
+    imageCount: fileIDs.length
+  })
   return { success: true, data: { evidenceId: result._id } }
+}
+
+async function confirmNoSpecialScenario(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  const access = await resolveAccess(user)
+  if (!access.canUploadEvidence) throw new Error('仅区县主管或区县经理可以确认附件材料状态')
+
+  const settlementMonth = String(data.settlementMonth || '').trim()
+  if (!/^\d{4}-\d{2}$/.test(settlementMonth)) throw new Error('结算月份格式不正确')
+  const district = resolveEvidenceDistrict(access, data.district)
+  const records = await getScopedEvidenceRecords(access, { settlementMonth, district })
+  if (records.some(item => getEvidenceRecordType(item) !== 'no_special_scenario')) {
+    throw new Error('本月已有附件材料，不能确认无特殊场景')
+  }
+
+  const existing = records.find(item => getEvidenceRecordType(item) === 'no_special_scenario')
+  if (existing) return { success: true, data: { confirmationId: existing._id } }
+
+  const now = new Date()
+  const result = await db.collection(COLLECTIONS.EVIDENCES).add({
+    data: {
+      recordType: 'no_special_scenario',
+      settlementMonth,
+      district,
+      fileIDs: [],
+      status: 'confirmed',
+      uploader: buildUserSnapshot(user),
+      createTime: now,
+      updateTime: now
+    }
+  })
+  await writeAuditLog(user, 'confirm_no_special_scenario', { settlementMonth, district })
+  return { success: true, data: { confirmationId: result._id } }
 }
 
 async function attachEvidenceImageUrls(records = []) {
@@ -482,40 +609,28 @@ async function listEvidence(wxContext, data = {}) {
   const user = await ensureUser(wxContext.OPENID)
   ensureLineProjectWorkspace(user)
   const access = await resolveAccess(user)
-  if (!access.canViewEvidence) throw new Error('当前账号没有查看证明材料的权限')
+  if (!access.canViewEvidence) throw new Error('当前账号没有查看附件材料的权限')
 
   const filters = data.filters || {}
-  const query = {}
-  if (filters.settlementMonth) query.settlementMonth = String(filters.settlementMonth).trim()
-  if (filters.district) {
-    const district = String(filters.district).trim()
-    if (!access.canViewAllEvidence && !access.managedDistricts.includes(district)) {
-      throw new Error('当前账号没有查看该区县证明材料的权限')
-    }
-    query.district = district
-  }
-
-  let records = []
-  try {
-    records = await fetchAllRecords(db.collection(COLLECTIONS.EVIDENCES).where(query))
-  } catch (error) {
-    if (!isCollectionNotFoundError(error)) throw error
-  }
-  if (!access.canViewAllEvidence) {
-    records = records.filter(item => access.managedDistricts.includes(item.district))
-  }
-  const visibleRecords = records
-    .filter(item => item.status !== 'inactive')
-    .sort((left, right) => new Date(right.createTime || 0) - new Date(left.createTime || 0))
-  const evidenceRecords = await attachEvidenceImageUrls(visibleRecords)
+  const visibleRecords = await getScopedEvidenceRecords(access, filters)
+  const materialRecords = visibleRecords.filter(item => getEvidenceRecordType(item) !== 'no_special_scenario')
+  const evidenceRecords = await attachEvidenceImageUrls(materialRecords)
+  const statusDistricts = filters.district
+    ? [String(filters.district).trim()]
+    : access.canViewAllEvidence ? [] : access.managedDistricts
 
   return {
     success: true,
     data: {
       canUpload: access.canUploadEvidence,
       canViewAll: access.canViewAllEvidence,
+      districtStatuses: buildEvidenceDistrictStatuses(visibleRecords, statusDistricts),
       records: evidenceRecords
-        .map(item => ({ ...item, createTimeText: formatDateTime(item.createTime) }))
+        .map(item => ({
+          ...item,
+          recordType: getEvidenceRecordType(item),
+          createTimeText: formatDateTime(item.createTime)
+        }))
     }
   }
 }
@@ -2318,6 +2433,13 @@ async function getWorkOrderDetail(wxContext, data = {}) {
   })), 'amount', 'desc')
   const firstRecord = records[0]
   const totalAmount = toNumber(records.reduce((sum, record) => sum + getRecordAmount(record), 0))
+  const evidenceRecords = access.canViewEvidence
+    ? await attachEvidenceImageUrls((await getScopedEvidenceRecords(access, {
+      settlementMonth: firstRecord.settlementMonth,
+      district: firstRecord.district,
+      workOrderKey: firstRecord.workOrderKey
+    })).filter(item => getEvidenceRecordType(item) !== 'no_special_scenario'))
+    : []
 
   return {
     success: true,
@@ -2340,6 +2462,11 @@ async function getWorkOrderDetail(wxContext, data = {}) {
       participants: participants.map(item => ({
         ...item,
         amountPercent: totalAmount > 0 ? toNumber(item.amount / totalAmount * 100) : 0
+      })),
+      evidenceRecords: evidenceRecords.map(item => ({
+        ...item,
+        recordType: getEvidenceRecordType(item),
+        createTimeText: formatDateTime(item.createTime)
       }))
     }
   }
@@ -2451,5 +2578,7 @@ module.exports.__test__ = {
   buildDashboardBreakdowns,
   normalizeEvidenceFileIDs,
   resolveEvidenceDistrict,
+  getEvidenceRecordType,
+  buildEvidenceDistrictStatuses,
   getEffectiveFeedbackStatus
 }
