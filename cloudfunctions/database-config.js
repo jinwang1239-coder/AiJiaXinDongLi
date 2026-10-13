@@ -205,6 +205,61 @@ module.exports = {
       ]
     },
     {
+      name: 'line_project_salary_records',
+      description: '集客线路人员月度整体工资表',
+      fields: {
+        settlementMonth: 'string',
+        district: 'string',
+        gridAccount: 'string',
+        personName: 'string',
+        fixedPay: 'number',
+        quantitativePay: 'number',
+        enterpriseWithholding: 'number',
+        personalWithholding: 'number',
+        importedNetPay: 'number',
+        calculatedNetPay: 'number',
+        detailAmount: 'number',
+        quantitativeDiff: 'number',
+        status: 'string',
+        importBatchNo: 'string',
+        importedBy: 'object',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { gridAccount: 1, settlementMonth: 1 } },
+        { keys: { settlementMonth: 1, district: 1, status: 1 } },
+        { keys: { importBatchNo: 1 } }
+      ]
+    },
+    {
+      name: 'line_project_salary_import_batches',
+      description: '集客线路人员整体工资导入批次表',
+      fields: {
+        batchNo: 'string',
+        settlementMonth: 'string',
+        sourceFileName: 'string',
+        fileID: 'string',
+        fileHash: 'string',
+        totalRows: 'number',
+        successRows: 'number',
+        errorRows: 'number',
+        warningRows: 'number',
+        totalDistricts: 'number',
+        districts: 'array',
+        districtSummaries: 'array',
+        netPayTotal: 'number',
+        status: 'string',
+        createdBy: 'object',
+        createTime: 'date',
+        updateTime: 'date'
+      },
+      indexes: [
+        { keys: { batchNo: 1 }, unique: true },
+        { keys: { settlementMonth: 1, createTime: -1 } }
+      ]
+    },
+    {
       name: 'line_project_evidences',
       description: '集客线路区县项目附件材料记录',
       fields: {
@@ -334,6 +389,14 @@ module.exports = {
       write: false
     },
     line_project_active_versions: {
+      read: false,
+      write: false
+    },
+    line_project_salary_records: {
+      read: false,
+      write: false
+    },
+    line_project_salary_import_batches: {
       read: false,
       write: false
     },

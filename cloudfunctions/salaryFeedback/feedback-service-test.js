@@ -42,6 +42,33 @@ assert.strictEqual(service.getEffectiveFeedbackStatus({
   status: 'resolved',
   resolution: { content: '已解释' }
 }), 'resolved')
+assert.strictEqual(service.getEffectiveFeedbackStatus({
+  workspaceType: 'line_project',
+  scene: 'line_project_workorders',
+  status: 'resolved',
+  resolution: { content: '已解释' }
+}), 'awaiting_submitter')
+assert.strictEqual(service.getEffectiveFeedbackStatus({
+  workspaceType: 'line_project',
+  workflowVersion: 2,
+  status: 'closed',
+  employeeConfirmed: true
+}), 'closed')
+assert.deepStrictEqual(service.buildFeedbackMessages({
+  workspaceType: 'line_project',
+  content: '首次问题',
+  submitter: { name: '一线员工' },
+  resolution: {
+    handler: { name: '监督员' },
+    handlerRoleText: '基层监督员',
+    content: '首次答复'
+  }
+}).map(item => item.type), ['submitter_question', 'handler_reply'])
+assert.strictEqual(service.normalizeFeedbackStatus({
+  workspaceType: 'line_project',
+  status: 'resolved',
+  resolution: { content: '历史答复' }
+}, { hasConfirmedMonth: true }).status, 'closed')
 assert.deepStrictEqual(service.normalizeFeedbackStatus({
   status: 'approved',
   managerReview: { status: 'approved', name: '处理人', reviewNote: '历史答复' }

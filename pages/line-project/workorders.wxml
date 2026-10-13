@@ -1,10 +1,10 @@
-<navigation-bar title="{{filters.subCategory || '集客线路'}}" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+<navigation-bar title="{{filters.subCategory || '量化报酬明细'}}" back="{{true}}" color="black" background="#FFF"></navigation-bar>
 
 <scroll-view class="page-container" scroll-y bindscrolltolower="onReachBottom">
   <view class="line-project-page">
     <view class="card">
       <view class="card-header">
-        <view class="card-title">{{filters.subCategory || '全部模块'}}汇总</view>
+        <view class="card-title">{{filters.subCategory || '量化报酬'}}汇总</view>
         <button class="btn btn-secondary mini-btn" bindtap="applyFilters" loading="{{overviewLoading || loading}}">刷新</button>
       </view>
 
@@ -25,7 +25,7 @@
       <view class="overview-hero-grid">
         <view class="overview-tile primary-tile overview-amount-tile">
           <view class="overview-value">￥{{overview.totalAmountText}}</view>
-          <view class="overview-label">本人{{filters.subCategory || '集客线路'}}工费</view>
+          <view class="overview-label">{{filters.subCategory ? '本人模块工费' : '系统工费明细合计'}}</view>
         </view>
       </view>
 

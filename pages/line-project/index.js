@@ -18,11 +18,13 @@ function isProfileCompleted(user) {
 
 function getFeedbackStatusText(status) {
   const statusMap = {
-    pending: '待反馈',
-    processing: '待反馈',
-    resolved: '已反馈',
-    approved: '已反馈',
-    rejected: '已反馈'
+    pending: '待处理人答复',
+    processing: '待处理人答复',
+    awaiting_submitter: '待您确认',
+    closed: '已解决',
+    resolved: '待您确认',
+    approved: '待您确认',
+    rejected: '待您确认'
   }
 
   return statusMap[status] || '待确认'
@@ -32,9 +34,11 @@ function getStatusClass(status) {
   const statusClassMap = {
     pending: 'status-pending',
     processing: 'status-processing',
-    resolved: 'status-approved',
-    approved: 'status-approved',
-    rejected: 'status-rejected',
+    awaiting_submitter: 'status-processing',
+    closed: 'status-approved',
+    resolved: 'status-processing',
+    approved: 'status-processing',
+    rejected: 'status-processing',
     not_required: 'status-pending'
   }
 
@@ -73,15 +77,35 @@ function buildAdminFeedbackList(records = []) {
       { value: supervisorReview, roleText: '基层监督员' }
     ].filter(item => item.value.status === 'pending')
       .map(item => `${item.value.name || item.value.gridAccount || item.roleText}（${item.roleText}）`)
+    const messages = (Array.isArray(record.messages) ? record.messages : []).map((message, index) => {
+      const sender = message.sender || {}
+      const senderName = sender.name || sender.realName || sender.gridAccount || '处理人'
+      let title = `${senderName}（一线员工）提交问题`
+      if (message.type === 'submitter_follow_up') title = `${senderName}（一线员工）继续反馈`
+      if (message.type === 'handler_reply') title = `${senderName}（${message.senderRoleText || '问题处理人'}）答复`
+      if (message.type === 'submitter_confirmed') title = `${senderName}（一线员工）确认已解决`
+      const attachments = Array.isArray(message.attachments) ? message.attachments : []
+      return {
+        ...message,
+        messageKey: `${message.roundNo || 1}_${message.type || 'message'}_${index}`,
+        title,
+        timeText: formatDateTime(message.createTime),
+        fileIDs: attachments.map(item => typeof item === 'string' ? item : item.fileID).filter(Boolean),
+        imageUrls: []
+      }
+    })
     return {
       ...record,
       submitterName: (record.submitter && record.submitter.name) || record.gridAccount || '未知人员',
       submitterAccount: (record.submitter && record.submitter.gridAccount) || record.gridAccount || '',
       amountText: lineProjectConfig.formatMoney(record.salaryAmount),
       createTimeText: formatDateTime(record.createTime),
-      statusText: getFeedbackStatusText(record.status),
+      statusText: ['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(record.status)
+        ? '待员工确认'
+        : getFeedbackStatusText(record.status),
       statusClass: getStatusClass(record.status),
-      isResolved: ['resolved', 'approved', 'rejected'].includes(record.status),
+      hasReply: !!resolution,
+      messages,
       waitingText: pendingHandlers.length ? `待${pendingHandlers.join('或')}反馈中` : '等待问题处理人反馈',
       resolutionHandlerText: resolution
         ? `${(resolution.handler && (resolution.handler.name || resolution.handler.realName || resolution.handler.gridAccount)) || '处理人'}（${resolution.handlerRoleText || '问题处理人'}）`
@@ -168,7 +192,14 @@ function buildFeedbackDecisionState({ settlementMonth, profileCompleted, hasPubl
     return state
   }
 
-  state.detailText = '最近一次问题反馈已处理完成，若无异议可继续签字确认。'
+  if (['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(feedbackRecord.status)) {
+    state.detailText = '问题处理人员已答复，请进入问题反馈确认是否解决；如仍有疑问可继续反馈。'
+    state.canConfirm = false
+    state.confirmBlockedReason = '问题工单等待本人确认'
+    return state
+  }
+
+  state.detailText = '问题工单已确认解决，如工费无异议可继续签字确认。'
   return state
 }
 
@@ -205,9 +236,43 @@ function buildDefaultOverview(settlementMonth) {
   }
 }
 
+function buildSalaryOverview(record, settlementMonth, detailAmount = 0) {
+  const hasRecord = !!record
+  const fixedPay = Number(record && record.fixedPay) || 0
+  const quantitativePay = hasRecord ? Number(record.quantitativePay || 0) : Number(detailAmount || 0)
+  const enterpriseWithholding = Number(record && record.enterpriseWithholding) || 0
+  const personalWithholding = Number(record && record.personalWithholding) || 0
+  const netPay = Number(record && record.netPay) || 0
+  return {
+    settlementMonth,
+    hasRecord,
+    fixedPayText: lineProjectConfig.formatMoney(fixedPay),
+    quantitativePayText: lineProjectConfig.formatMoney(quantitativePay),
+    enterpriseWithholdingText: lineProjectConfig.formatMoney(enterpriseWithholding),
+    personalWithholdingText: lineProjectConfig.formatMoney(personalWithholding),
+    netPayText: lineProjectConfig.formatMoney(netPay),
+    detailAmountText: lineProjectConfig.formatMoney(detailAmount),
+    updateTimeText: record ? record.updateTimeText || '' : ''
+  }
+}
+
 function buildDefaultManagementOverview(settlementMonth) {
   return {
     settlementMonth,
+    salarySummary: {
+      hasSalaryData: false,
+      hasDetailData: false,
+      totalPeople: 0,
+      fixedPayTotalText: lineProjectConfig.formatMoney(0),
+      quantitativePayTotalText: lineProjectConfig.formatMoney(0),
+      enterpriseWithholdingTotalText: lineProjectConfig.formatMoney(0),
+      personalWithholdingTotalText: lineProjectConfig.formatMoney(0),
+      netPayTotalText: lineProjectConfig.formatMoney(0),
+      detailAmountText: lineProjectConfig.formatMoney(0),
+      differenceText: lineProjectConfig.formatMoney(0),
+      reconciliationText: '本月整体工资尚未导入',
+      reconciliationClass: 'salary-reconcile-missing'
+    },
     totalAmountText: lineProjectConfig.formatMoney(0),
     totalWorkOrders: 0,
     totalPeople: 0,
@@ -220,6 +285,7 @@ function buildDefaultManagementOverview(settlementMonth) {
 
 function buildManagementOverview(data = {}, settlementMonth = '', evidenceData = {}) {
   const stats = data.stats || {}
+  const salary = data.salarySummary || {}
   const totalAmount = Number(stats.totalAmount || 0)
   const evidenceRecords = evidenceData.records || []
   const statusMap = {}
@@ -238,6 +304,30 @@ function buildManagementOverview(data = {}, settlementMonth = '', evidenceData =
   })
   return {
     settlementMonth,
+    salarySummary: {
+      hasSalaryData: !!salary.hasSalaryData,
+      hasDetailData: !!salary.hasDetailData,
+      totalPeople: Number(salary.totalPeople || 0),
+      fixedPayTotalText: lineProjectConfig.formatMoney(salary.fixedPayTotal),
+      quantitativePayTotalText: lineProjectConfig.formatMoney(salary.quantitativePayTotal),
+      enterpriseWithholdingTotalText: lineProjectConfig.formatMoney(salary.enterpriseWithholdingTotal),
+      personalWithholdingTotalText: lineProjectConfig.formatMoney(salary.personalWithholdingTotal),
+      netPayTotalText: lineProjectConfig.formatMoney(salary.netPayTotal),
+      detailAmountText: lineProjectConfig.formatMoney(salary.detailAmount),
+      differenceText: lineProjectConfig.formatMoney(salary.quantitativeDifference),
+      reconciliationText: salary.reconciliationStatus === 'matched'
+        ? '金额一致'
+        : salary.reconciliationStatus === 'mismatch'
+          ? '存在差额'
+          : salary.reconciliationStatus === 'detail_missing'
+            ? '业务量明细尚未导入'
+            : '本月整体工资尚未导入',
+      reconciliationClass: salary.reconciliationStatus === 'matched'
+        ? 'salary-reconcile-matched'
+        : salary.reconciliationStatus === 'mismatch'
+          ? 'salary-reconcile-mismatch'
+          : 'salary-reconcile-missing'
+    },
     totalAmountText: lineProjectConfig.formatMoney(totalAmount),
     totalWorkOrders: Number(stats.totalWorkOrders || 0),
     totalPeople: Number(stats.totalPeople || 0),
@@ -277,8 +367,10 @@ Page({
     profileDisplayName: '正在读取个人信息',
     profileSubtitle: '区县 / 所属网格 / 网格通账号',
     profileCompleted: false,
+    isSystemAdmin: false,
     canImport: false,
     canManage: false,
+    canViewSalarySummary: false,
     canViewManagedFeedbacks: false,
     canResolveFeedback: false,
     canUploadEvidence: false,
@@ -296,6 +388,7 @@ Page({
     managementOverview: buildDefaultManagementOverview(lineProjectConfig.getDefaultSettlementMonth()),
     managedFeedbacks: [],
     overview: buildDefaultOverview(lineProjectConfig.getDefaultSettlementMonth()),
+    salaryOverview: buildSalaryOverview(null, lineProjectConfig.getDefaultSettlementMonth()),
     feedbackDecision: buildDefaultFeedbackDecision(lineProjectConfig.getDefaultSettlementMonth())
   },
 
@@ -310,6 +403,7 @@ Page({
       managementOverview: buildDefaultManagementOverview(settlementMonth),
       managedFeedbacks: [],
       overview: buildDefaultOverview(settlementMonth),
+      salaryOverview: buildSalaryOverview(null, settlementMonth),
       feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
     })
   },
@@ -361,8 +455,10 @@ Page({
       this.currentAccess = access
       this.updateIdentityDisplay(user, access)
       this.setData({
+        isSystemAdmin: !!access.isSystemAdmin,
         canImport: !!access.canImport,
         canManage: !!access.canManage,
+        canViewSalarySummary: !!access.canViewSalarySummary,
         canViewManagedFeedbacks: !!access.canViewManagedFeedbacks,
         canResolveFeedback: (access.lineProjectRoles || []).some(item => ['district_supervisor', 'district_manager'].includes(item)),
         canUploadEvidence: !!access.canUploadEvidence,
@@ -371,7 +467,9 @@ Page({
         feedbackScopeText: access.canViewAll
           ? '全市所有反馈'
           : `${(access.managedDistricts || []).join('、')}问题反馈`,
-        managementScopeTitle: access.canViewAll ? '全市工费总览' : '本区县工费总览',
+        managementScopeTitle: access.isSystemAdmin
+          ? '全市薪酬总览'
+          : access.canViewSalarySummary ? '本区县薪酬总览' : access.canViewAll ? '全市工费总览' : '本区县工费总览',
         managementScopeText: access.canViewAll
           ? '数据范围：全部区县'
           : `数据范围：${(access.managedDistricts || []).join('、')}`,
@@ -386,24 +484,31 @@ Page({
       const canViewManagedFeedbacks = canManage || lineProjectRoles.some(item => ['district_supervisor', 'district_leader'].includes(item))
       const canResolveFeedback = role === 'district_manager' || lineProjectRoles.some(item => ['district_supervisor', 'district_manager'].includes(item))
       const canUploadEvidence = role === 'district_manager' || lineProjectRoles.includes('district_leader')
+      const canViewSalarySummary = role === workspace.SYSTEM_ADMIN_ROLE || role === 'district_manager' || lineProjectRoles.some(item => ['district_leader', 'district_manager'].includes(item))
       const canViewAllEvidence = canImport
       this.currentAccess = {
+        isSystemAdmin: role === workspace.SYSTEM_ADMIN_ROLE,
         canImport,
         canManage,
+        canViewSalarySummary,
         canViewAll: canImport,
         canViewManagedFeedbacks,
         canViewEvidence: canUploadEvidence || canViewAllEvidence
       }
       this.setData({
+        isSystemAdmin: role === workspace.SYSTEM_ADMIN_ROLE,
         canImport,
         canManage,
+        canViewSalarySummary,
         canViewManagedFeedbacks,
         canResolveFeedback,
         canUploadEvidence,
         canViewEvidence: canUploadEvidence || canViewAllEvidence,
         canViewAllEvidence,
         feedbackScopeText: canImport ? '全市所有反馈' : `${user.district || '本区县'}问题反馈`,
-        managementScopeTitle: canImport ? '全市工费总览' : '本区县工费总览',
+        managementScopeTitle: role === workspace.SYSTEM_ADMIN_ROLE
+          ? '全市薪酬总览'
+          : canViewSalarySummary ? '本区县薪酬总览' : canImport ? '全市工费总览' : '本区县工费总览',
         managementScopeText: canImport ? '数据范围：全部区县' : `数据范围：${user.district || '授权区县'}`
       })
     }
@@ -412,7 +517,9 @@ Page({
 
   updateIdentityDisplay(user = {}, access = null) {
     const roles = access && Array.isArray(access.lineProjectRoles) ? access.lineProjectRoles : []
-    const roleText = roles.includes('district_leader')
+    const roleText = access && access.isSystemAdmin
+      ? '系统管理员'
+      : roles.includes('district_leader')
       ? '集客线路区县主管'
       : roles.includes('district_supervisor')
         ? '集客线路基层监督员'
@@ -449,14 +556,24 @@ Page({
         return
       }
 
-      const data = await lineProjectService.callLineProject('getMyOverview', {
-        filters: this.data.filters
-      })
+      const [data, salaryData] = await Promise.all([
+        lineProjectService.callLineProject('getMyOverview', {
+          filters: this.data.filters
+        }),
+        lineProjectService.callLineProject('getMySalary', {
+          settlementMonth: this.data.filters.settlementMonth
+        })
+      ])
       const totalAmount = Number(data.summary && data.summary.totalAmount) || 0
       const composition = (data.summary && data.summary.composition) || []
       const compositionDisplay = buildCompositionDisplay(composition)
 
       this.setData({
+        salaryOverview: buildSalaryOverview(
+          salaryData.record,
+          this.data.filters.settlementMonth,
+          totalAmount
+        ),
         overview: {
           summary: {
             settlementMonth: data.summary ? data.summary.settlementMonth : this.data.filters.settlementMonth,
@@ -526,7 +643,10 @@ Page({
       throw new Error((result.result && result.result.error) || '问题反馈加载失败')
     }
     const records = buildAdminFeedbackList((result.result.data && result.result.data.records) || [])
-    const fileIDs = [...new Set(records.reduce((list, item) => list.concat(item.resolutionFileIDs || []), []))]
+    const fileIDs = [...new Set(records.flatMap(item => [
+      ...(item.resolutionFileIDs || []),
+      ...(item.messages || []).flatMap(message => message.fileIDs || [])
+    ]))]
     if (fileIDs.length) {
       const urlResult = await wx.cloud.getTempFileURL({ fileList: fileIDs })
       const urlMap = {}
@@ -535,6 +655,10 @@ Page({
       })
       records.forEach(item => {
         item.resolutionImageUrls = item.resolutionFileIDs.map(fileID => urlMap[fileID]).filter(Boolean)
+        item.messages = item.messages.map(message => ({
+          ...message,
+          imageUrls: message.fileIDs.map(fileID => urlMap[fileID]).filter(Boolean)
+        }))
       })
     }
     this.setData({ managedFeedbacks: records })
@@ -542,8 +666,9 @@ Page({
 
   previewManagedFeedbackImage(e) {
     const record = this.data.managedFeedbacks[Number(e.currentTarget.dataset.recordIndex)]
-    const urls = record ? record.resolutionImageUrls || [] : []
-    wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
+    const message = record && record.messages[Number(e.currentTarget.dataset.messageIndex)]
+    const urls = message ? message.imageUrls || [] : []
+    if (urls.length) wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
   },
 
   async loadFeedbackDecision() {
@@ -612,6 +737,7 @@ Page({
       managementOverview: buildDefaultManagementOverview(settlementMonth),
       managedFeedbacks: [],
       overview: buildDefaultOverview(settlementMonth),
+      salaryOverview: buildSalaryOverview(null, settlementMonth),
       feedbackDecision: buildDefaultFeedbackDecision(settlementMonth)
     }, () => {
       this.refreshOverview()
@@ -626,6 +752,10 @@ Page({
   onCompositionTap(e) {
     const { subCategory = '' } = e.currentTarget.dataset || {}
     this.navigateToWorkOrders(subCategory)
+  },
+
+  navigateToQuantitativeDetail() {
+    this.navigateToWorkOrders('')
   },
 
   navigateToWorkOrders(subCategory = '') {
@@ -707,6 +837,14 @@ Page({
   navigateToImport() {
     wx.navigateTo({
       url: `/pages/line-project/import?${lineProjectConfig.buildQueryString({
+        settlementMonth: this.data.filters.settlementMonth
+      })}`
+    })
+  },
+
+  navigateToSalaryImport() {
+    wx.navigateTo({
+      url: `/pages/line-project/salary-import?${lineProjectConfig.buildQueryString({
         settlementMonth: this.data.filters.settlementMonth
       })}`
     })

@@ -296,4 +296,39 @@ db.collection('line_project_evidences').createIndex({
   name: 'line_project_evidence_project_index'
 })
 
+db.collection('line_project_salary_records').createIndex({
+  gridAccount: 1,
+  settlementMonth: 1
+}, {
+  name: 'line_project_salary_account_month_index'
+})
+
+db.collection('line_project_salary_records').createIndex({
+  settlementMonth: 1,
+  district: 1,
+  status: 1
+}, {
+  name: 'line_project_salary_month_district_status_index'
+})
+
+db.collection('line_project_salary_records').createIndex({
+  importBatchNo: 1
+}, {
+  name: 'line_project_salary_batch_index'
+})
+
+db.collection('line_project_salary_import_batches').createIndex({
+  batchNo: 1
+}, {
+  unique: true,
+  name: 'line_project_salary_batch_no_unique'
+})
+
+db.collection('line_project_salary_import_batches').createIndex({
+  settlementMonth: 1,
+  createTime: -1
+}, {
+  name: 'line_project_salary_batch_month_index'
+})
+
 console.log('数据库初始化完成')

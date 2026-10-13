@@ -66,7 +66,7 @@ Page({
 
   onLoad(options = {}) {
     const settlementMonth = lineProjectConfig.decodeQueryValue(options.settlementMonth) || this.data.filters.settlementMonth
-    const subCategory = lineProjectConfig.normalizeSubCategory(options.subCategory, lineProjectConfig.CURRENT_SUBCATEGORY)
+    const subCategory = lineProjectConfig.normalizeSubCategory(options.subCategory, '')
     this.setData({
       monthPickerValue: lineProjectConfig.toMonthPickerValue(settlementMonth),
       'filters.settlementMonth': settlementMonth,

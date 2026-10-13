@@ -29,7 +29,9 @@ const COLLECTIONS = {
   ROUTES: 'feedback_routes',
   EVIDENCES: 'line_project_evidences',
   AUDIT_LOGS: 'line_project_audit_logs',
-  ACTIVE_VERSIONS: 'line_project_active_versions'
+  ACTIVE_VERSIONS: 'line_project_active_versions',
+  SALARY_RECORDS: 'line_project_salary_records',
+  SALARY_BATCHES: 'line_project_salary_import_batches'
 }
 
 const WORKSPACE_TYPES = {
@@ -95,6 +97,14 @@ exports.main = async (event) => {
         return await listEvidence(wxContext, data)
       case 'rollbackImportBatch':
         return await rollbackImportBatch(wxContext, data)
+      case 'salaryImportPreview':
+        return await salaryImportPreview(wxContext, data)
+      case 'salaryImportCommit':
+        return await salaryImportCommit(wxContext, data)
+      case 'getMySalary':
+        return await getMySalary(wxContext, data)
+      case 'getSalaryImportBatches':
+        return await getSalaryImportBatches(wxContext, data)
       case 'test':
         return {
           success: true,
@@ -148,7 +158,11 @@ function normalizeWorkspaceType(workspaceType) {
 }
 
 function isSystemAdmin(user = {}) {
-  return user.role === SYSTEM_ADMIN_ROLE
+  if (user.role === SYSTEM_ADMIN_ROLE) return true
+  return SYSTEM_ADMIN_ROSTER.some(admin => (
+    admin.gridAccount === user.gridAccount &&
+    normalizeText(admin.name) === normalizeText(user.realName)
+  ))
 }
 
 function canImportLineProject(user = {}) {
@@ -168,6 +182,12 @@ function ensureLineProjectWorkspace(user = {}) {
 function ensureImportRole(user = {}) {
   if (!canImportLineProject(user)) {
     throw new Error('仅集客线路管理员或系统管理员可以执行导入、发布和回滚操作')
+  }
+}
+
+function ensureSystemAdminRole(user = {}) {
+  if (!isSystemAdmin(user)) {
+    throw new Error('仅系统管理员可以导入个人整体工资')
   }
 }
 
@@ -251,6 +271,8 @@ async function resolveAccess(user = {}) {
 
   const canViewManagedFeedbacks = canImport || ['district_supervisor', 'district_leader', 'district_manager']
     .some(role => roles.has(role))
+  const canViewSalarySummary = admin || ['district_leader', 'district_manager']
+    .some(role => roles.has(role))
   const canUploadEvidence = !admin && ['district_leader', 'district_manager'].some(role => roles.has(role)) && managedDistricts.size > 0
   const canViewAllEvidence = canImport
 
@@ -260,6 +282,7 @@ async function resolveAccess(user = {}) {
     canManage: canImport || managedDistricts.size > 0,
     canViewAll: canImport,
     canViewManagedFeedbacks,
+    canViewSalarySummary,
     canUploadEvidence,
     canViewEvidence: canViewAllEvidence || canUploadEvidence,
     canViewAllEvidence,
@@ -745,16 +768,22 @@ function isLineProjectFeedbackRecord(record = {}) {
 }
 
 function isProcessingFeedbackStatus(status) {
-  return ['pending', 'processing'].includes(String(status || '').trim())
+  return ['pending', 'processing', 'awaiting_submitter'].includes(String(status || '').trim())
 }
 
 function getEffectiveFeedbackStatus(record = {}) {
-  if (record.resolution || record.status === 'resolved') return 'resolved'
+  const status = String(record.status || '').trim()
+  if (record.employeeConfirmed || status === 'closed') return 'closed'
+  if (status === 'awaiting_submitter') return 'awaiting_submitter'
+  if (Number(record.workflowVersion || 0) >= 2) return 'pending'
+  if (record.resolution || ['resolved', 'approved', 'rejected'].includes(status)) {
+    return 'awaiting_submitter'
+  }
   const managerStatus = record.managerReview && record.managerReview.status
   const supervisorStatus = record.supervisorReview && record.supervisorReview.status
-  if (managerStatus === 'rejected' || supervisorStatus === 'rejected') return 'rejected'
-  if (managerStatus === 'approved' || supervisorStatus === 'approved') return 'approved'
-  return ['approved', 'rejected'].includes(record.status) ? record.status : 'pending'
+  if (['resolved', 'approved', 'rejected'].includes(managerStatus)) return 'awaiting_submitter'
+  if (['resolved', 'approved', 'rejected'].includes(supervisorStatus)) return 'awaiting_submitter'
+  return 'pending'
 }
 
 function buildMonthConfirmRecord(record = {}) {
@@ -802,6 +831,217 @@ function getActualMaxRow(worksheet, minimumRow = 1) {
     }
   })
   return maxRow
+}
+
+function getSalaryColumnHeader(worksheet, column) {
+  return [1, 2, 3]
+    .map(rowNo => normalizeText(getCellValue(worksheet, column, rowNo)))
+    .filter(Boolean)
+    .join('')
+}
+
+function normalizeGridAccount(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : String(value).trim()
+  }
+  return normalizeText(value)
+}
+
+function readSalaryAmount(worksheet, column, rowNo) {
+  const raw = getCellValue(worksheet, column, rowNo)
+  if (raw === '' || raw === null || raw === undefined || !Number.isFinite(Number(raw))) {
+    return { valid: false, value: 0 }
+  }
+  return { valid: true, value: toNumber(raw) }
+}
+
+function validateSalaryWorksheet(worksheet) {
+  const expectedHeaders = {
+    B: '区县',
+    C: '人员编码',
+    D: '人员姓名',
+    E: '固定报酬',
+    F: '量化报酬',
+    G: '企业代扣代缴',
+    H: '个人代扣代缴',
+    I: '实发报酬'
+  }
+  return Object.keys(expectedHeaders).reduce((issues, column) => {
+    if (!getSalaryColumnHeader(worksheet, column).includes(expectedHeaders[column])) {
+      issues.push(`${column}列表头应包含“${expectedHeaders[column]}”`)
+    }
+    return issues
+  }, [])
+}
+
+function buildSalaryUserMatch(bindingContext, gridAccount, personName, district) {
+  const candidates = (bindingContext.usersByGridAccount[gridAccount] || []).filter(user => user.status !== 'inactive')
+  if (candidates.length > 1) {
+    return { blockingMessage: `人员编码 ${gridAccount} 对应多个有效系统用户` }
+  }
+  if (!candidates.length) {
+    return { warningMessage: `人员编码 ${gridAccount} 尚未绑定系统用户`, user: null }
+  }
+  const user = candidates[0]
+  const warnings = []
+  if (normalizeText(user.realName) !== normalizeText(personName)) {
+    warnings.push(`人员编码 ${gridAccount} 的系统姓名为 ${user.realName}，与工资表姓名 ${personName} 不一致`)
+  }
+  if (normalizeText(user.district) && normalizeText(user.district) !== normalizeText(district)) {
+    warnings.push(`人员编码 ${gridAccount} 的系统区县为 ${user.district}，与工资表区县 ${district} 不一致；本次按工资表区县归属`)
+  }
+  return { warningMessage: warnings.join('；'), user }
+}
+
+function parseSalaryWorkbook(fileContent, options = {}) {
+  const { settlementMonth = '', fileName = '', bindingContext = { usersByGridAccount: {} }, detailAmountMap = {} } = options
+  if (!settlementMonth) throw new Error('请选择结算月份')
+
+  const workbook = XLSX.read(fileContent, { type: 'buffer', cellDates: true })
+  const sheetName = workbook.SheetNames[0]
+  const worksheet = sheetName ? workbook.Sheets[sheetName] : null
+  if (!worksheet) throw new Error('工资文件中没有可读取的工作表')
+
+  const structureIssues = validateSalaryWorksheet(worksheet)
+  if (structureIssues.length) throw new Error(`工资模板不正确：${structureIssues.join('；')}`)
+
+  const records = []
+  const blockingErrors = []
+  const warningRows = []
+  const seenAccounts = new Set()
+  const maxRow = Math.min(getActualMaxRow(worksheet, 4), 10000)
+
+  for (let rowNo = 4; rowNo <= maxRow; rowNo += 1) {
+    const rowValues = 'ABCDEFGHI'.split('').map(column => getCellValue(worksheet, column, rowNo))
+    if (rowValues.every(value => value === '' || value === null || value === undefined)) continue
+
+    const sequenceNo = String(getCellValue(worksheet, 'A', rowNo) || '').trim()
+    const district = normalizeText(getCellValue(worksheet, 'B', rowNo))
+    const gridAccount = normalizeGridAccount(getCellValue(worksheet, 'C', rowNo))
+    const personName = String(getCellValue(worksheet, 'D', rowNo) || '').trim()
+    const fixedPay = readSalaryAmount(worksheet, 'E', rowNo)
+    const quantitativePay = readSalaryAmount(worksheet, 'F', rowNo)
+    const enterpriseWithholding = readSalaryAmount(worksheet, 'G', rowNo)
+    const personalWithholding = readSalaryAmount(worksheet, 'H', rowNo)
+    const importedNetPay = readSalaryAmount(worksheet, 'I', rowNo)
+    const messages = []
+
+    if (!district) messages.push('区县不能为空')
+    if (district && !APPROVAL_ROUTE_ROSTER.some(item => item.district === district)) {
+      messages.push(`区县“${district}”不在系统区县范围内`)
+    }
+    if (!gridAccount) messages.push('人员编码不能为空')
+    if (!personName) messages.push('人员姓名不能为空')
+    ;[
+      ['固定报酬', fixedPay],
+      ['量化报酬', quantitativePay],
+      ['企业代扣代缴', enterpriseWithholding],
+      ['个人代扣代缴', personalWithholding],
+      ['实发报酬', importedNetPay]
+    ].forEach(([label, amount]) => {
+      if (!amount.valid) messages.push(`${label}必须为数字`)
+    })
+    if (gridAccount && seenAccounts.has(gridAccount)) messages.push(`人员编码 ${gridAccount} 在文件中重复`)
+
+    const calculatedNetPay = toNumber(fixedPay.value + quantitativePay.value - personalWithholding.value)
+    const netPayDiff = toNumber(importedNetPay.value - calculatedNetPay)
+    if (importedNetPay.valid && Math.abs(netPayDiff) > 0.01) {
+      messages.push(`实发报酬应为 ${calculatedNetPay.toFixed(2)}，与表内 ${importedNetPay.value.toFixed(2)} 不一致`)
+    }
+
+    const userMatch = gridAccount
+      ? buildSalaryUserMatch(bindingContext, gridAccount, personName, district)
+      : { user: null, warningMessage: '' }
+    if (userMatch.blockingMessage) messages.push(userMatch.blockingMessage)
+
+    if (messages.length) {
+      blockingErrors.push({ rowNo, district, gridAccount, personName, messages })
+      continue
+    }
+
+    seenAccounts.add(gridAccount)
+    const detailAmount = toNumber(detailAmountMap[gridAccount] || 0)
+    const quantitativeDiff = toNumber(quantitativePay.value - detailAmount)
+    const warnings = []
+    if (userMatch.warningMessage) warnings.push(userMatch.warningMessage)
+    if (Math.abs(quantitativeDiff) > 0.01) {
+      warnings.push(`量化报酬 ${quantitativePay.value.toFixed(2)} 与系统工费明细 ${detailAmount.toFixed(2)} 相差 ${quantitativeDiff.toFixed(2)}`)
+    }
+
+    const matchedUser = userMatch.user
+    const record = {
+      settlementMonth,
+      sequenceNo,
+      district,
+      gridAccount,
+      personName,
+      fixedPay: fixedPay.value,
+      quantitativePay: quantitativePay.value,
+      enterpriseWithholding: enterpriseWithholding.value,
+      personalWithholding: personalWithholding.value,
+      importedNetPay: importedNetPay.value,
+      calculatedNetPay,
+      netPayDiff,
+      detailAmount,
+      quantitativeDiff,
+      matchStatus: matchedUser ? 'matched' : 'unmatched',
+      matchedUserId: matchedUser ? matchedUser._id || '' : '',
+      matchedOpenid: matchedUser ? matchedUser.openid || '' : '',
+      matchedUserName: matchedUser ? matchedUser.realName || '' : '',
+      gridName: matchedUser ? matchedUser.gridName || '' : '',
+      warningMessages: warnings,
+      sourceFileName: fileName,
+      sourceSheet: sheetName,
+      sourceRowNo: rowNo
+    }
+    records.push(record)
+    if (warnings.length) warningRows.push(record)
+  }
+
+  if (!records.length && !blockingErrors.length) {
+    blockingErrors.push({ rowNo: 0, gridAccount: '', personName: '', messages: ['工资表中没有可导入数据'] })
+  }
+
+  const total = field => toNumber(records.reduce((sum, record) => sum + Number(record[field] || 0), 0))
+  const districtSummaries = [...new Set(records.map(record => record.district).filter(Boolean))]
+    .sort()
+    .map(district => {
+      const districtRecords = records.filter(record => record.district === district)
+      const districtTotal = field => toNumber(districtRecords.reduce((sum, record) => sum + Number(record[field] || 0), 0))
+      return {
+        district,
+        totalPeople: new Set(districtRecords.map(record => record.gridAccount).filter(Boolean)).size,
+        fixedPayTotal: districtTotal('fixedPay'),
+        quantitativePayTotal: districtTotal('quantitativePay'),
+        enterpriseWithholdingTotal: districtTotal('enterpriseWithholding'),
+        personalWithholdingTotal: districtTotal('personalWithholding'),
+        netPayTotal: districtTotal('calculatedNetPay')
+      }
+    })
+  return {
+    records,
+    previewRows: records.slice(0, 30),
+    blockingErrors,
+    warningRows,
+    summary: {
+      settlementMonth,
+      totalRows: records.length + blockingErrors.length,
+      successRows: records.length,
+      errorRows: blockingErrors.length,
+      warningRows: warningRows.length,
+      totalDistricts: districtSummaries.length,
+      districts: districtSummaries.map(item => item.district),
+      districtSummaries,
+      matchedRows: records.filter(record => record.matchStatus === 'matched').length,
+      unmatchedRows: records.filter(record => record.matchStatus !== 'matched').length,
+      quantitativeMismatchRows: records.filter(record => Math.abs(record.quantitativeDiff) > 0.01).length,
+      fixedPayTotal: total('fixedPay'),
+      quantitativePayTotal: total('quantitativePay'),
+      enterpriseWithholdingTotal: total('enterpriseWithholding'),
+      personalWithholdingTotal: total('personalWithholding'),
+      netPayTotal: total('calculatedNetPay')
+    }
+  }
 }
 
 function isRowEmpty(worksheet, rowNo, moduleConfig = MODULE_CONFIGS[CURRENT_SUBCATEGORY]) {
@@ -1435,6 +1675,284 @@ function buildBatchRecord(user, parseResult, payload = {}) {
     errorSummary: (parseResult.blockingErrors || []).slice(0, 20),
     createdBy: buildUserSnapshot(user),
     createTime: new Date()
+  }
+}
+
+function buildDetailAmountMap(records = []) {
+  return records.reduce((map, record) => {
+    const gridAccount = String(record.gridAccount || '').trim()
+    if (gridAccount) map[gridAccount] = toNumber((map[gridAccount] || 0) + getRecordAmount(record))
+    return map
+  }, {})
+}
+
+async function buildSalaryParseContext(wxContext, settlementMonth) {
+  const [bindingContext, scopedResult] = await Promise.all([
+    loadBindingContext(),
+    getScopedRecords(wxContext, { settlementMonth }, 'role')
+  ])
+  return {
+    bindingContext,
+    detailAmountMap: buildDetailAmountMap(scopedResult.records)
+  }
+}
+
+function buildSalaryBatchRecord(user, parseResult, data, fileHash, status = 'published') {
+  const now = new Date()
+  const batchNo = `salary_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return {
+    batchNo,
+    settlementMonth: parseResult.summary.settlementMonth,
+    sourceFileName: data.fileName || '',
+    fileID: data.fileID || '',
+    fileHash,
+    ...parseResult.summary,
+    status,
+    createdBy: buildUserSnapshot(user),
+    createTime: now,
+    updateTime: now
+  }
+}
+
+async function salaryImportPreview(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  ensureSystemAdminRole(user)
+  if (!data.fileID) throw new Error('请先上传整体工资 Excel 文件')
+
+  const settlementMonth = data.settlementMonth || formatMonth(new Date())
+  const [downloadResult, parseContext] = await Promise.all([
+    cloud.downloadFile({ fileID: data.fileID }),
+    buildSalaryParseContext(wxContext, settlementMonth)
+  ])
+  const parseResult = parseSalaryWorkbook(downloadResult.fileContent, {
+    settlementMonth,
+    fileName: data.fileName || '',
+    ...parseContext
+  })
+
+  return {
+    success: true,
+    data: {
+      summary: parseResult.summary,
+      previewRows: parseResult.previewRows,
+      blockingErrors: parseResult.blockingErrors,
+      warningRows: parseResult.warningRows
+    }
+  }
+}
+
+async function salaryImportCommit(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  ensureSystemAdminRole(user)
+  if (!data.fileID) throw new Error('请先上传整体工资 Excel 文件')
+
+  const settlementMonth = data.settlementMonth || formatMonth(new Date())
+  const [downloadResult, parseContext] = await Promise.all([
+    cloud.downloadFile({ fileID: data.fileID }),
+    buildSalaryParseContext(wxContext, settlementMonth)
+  ])
+  const parseResult = parseSalaryWorkbook(downloadResult.fileContent, {
+    settlementMonth,
+    fileName: data.fileName || '',
+    ...parseContext
+  })
+  if (parseResult.blockingErrors.length) {
+    throw new Error(`工资文件存在 ${parseResult.blockingErrors.length} 条错误，请修正后重新导入`)
+  }
+
+  const fileHash = createFileHash(downloadResult.fileContent)
+  const batchRecord = buildSalaryBatchRecord(user, parseResult, data, fileHash, 'processing')
+  let batchId = ''
+  try {
+    const batchResult = await db.collection(COLLECTIONS.SALARY_BATCHES).add({ data: batchRecord })
+    batchId = batchResult._id
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) {
+      throw new Error('请先创建 line_project_salary_import_batches 和 line_project_salary_records 集合')
+    }
+    throw error
+  }
+
+  try {
+    let existingRecords = []
+    try {
+      existingRecords = await fetchAllRecords(
+        db.collection(COLLECTIONS.SALARY_RECORDS).where({ settlementMonth })
+      )
+    } catch (error) {
+      if (!isCollectionNotFoundError(error)) throw error
+      throw new Error('请先创建 line_project_salary_records 集合')
+    }
+    const activeByAccount = {}
+    const duplicateRecords = []
+    existingRecords.forEach(record => {
+      if (!activeByAccount[record.gridAccount]) activeByAccount[record.gridAccount] = record
+      else duplicateRecords.push(record)
+    })
+
+    const now = new Date()
+    const importedAccounts = new Set()
+    for (const salaryRecord of parseResult.records) {
+      importedAccounts.add(salaryRecord.gridAccount)
+      const recordData = {
+        ...salaryRecord,
+        status: 'active',
+        importBatchNo: batchRecord.batchNo,
+        importedBy: buildUserSnapshot(user),
+        updateTime: now
+      }
+      const existing = activeByAccount[salaryRecord.gridAccount]
+      if (existing) {
+        await db.collection(COLLECTIONS.SALARY_RECORDS).doc(existing._id).update({ data: recordData })
+      } else {
+        await db.collection(COLLECTIONS.SALARY_RECORDS).add({ data: { ...recordData, createTime: now } })
+      }
+    }
+
+    const recordsToDisable = existingRecords
+      .filter(record => !importedAccounts.has(record.gridAccount))
+      .concat(duplicateRecords)
+    for (const record of recordsToDisable) {
+      await db.collection(COLLECTIONS.SALARY_RECORDS).doc(record._id).update({
+        data: { status: 'inactive', updateTime: now }
+      })
+    }
+
+    await db.collection(COLLECTIONS.SALARY_BATCHES).doc(batchId).update({
+      data: { status: 'published', updateTime: now }
+    })
+    await writeAuditLog(user, 'import_salary_records', {
+      batchNo: batchRecord.batchNo,
+      settlementMonth,
+      totalRows: parseResult.records.length
+    })
+
+    return {
+      success: true,
+      data: {
+        batchNo: batchRecord.batchNo,
+        summary: parseResult.summary
+      }
+    }
+  } catch (error) {
+    if (batchId) {
+      await db.collection(COLLECTIONS.SALARY_BATCHES).doc(batchId).update({
+        data: { status: 'failed', errorMessage: error.message || '导入失败', updateTime: new Date() }
+      }).catch(() => {})
+    }
+    throw error
+  }
+}
+
+function buildMySalaryRecord(record = {}) {
+  return {
+    settlementMonth: record.settlementMonth || '',
+    gridAccount: record.gridAccount || '',
+    personName: record.personName || '',
+    fixedPay: toNumber(record.fixedPay),
+    quantitativePay: toNumber(record.quantitativePay),
+    enterpriseWithholding: toNumber(record.enterpriseWithholding),
+    personalWithholding: toNumber(record.personalWithholding),
+    netPay: toNumber(record.calculatedNetPay),
+    importedNetPay: toNumber(record.importedNetPay),
+    importBatchNo: record.importBatchNo || '',
+    updateTimeText: formatDateTime(record.updateTime || record.createTime)
+  }
+}
+
+async function getSalaryRecordsByMonth(settlementMonth) {
+  try {
+    const records = await fetchAllRecords(
+      db.collection(COLLECTIONS.SALARY_RECORDS).where({ settlementMonth })
+    )
+    return records.filter(record => record.status !== 'inactive')
+  } catch (error) {
+    if (isCollectionNotFoundError(error)) return []
+    throw error
+  }
+}
+
+function buildSalaryDashboardSummary(records = [], detailAmount = 0, hasDetailData = false) {
+  const sum = field => toNumber(records.reduce((total, record) => total + Number(record[field] || 0), 0))
+  const quantitativePayTotal = sum('quantitativePay')
+  const quantitativeDifference = toNumber(quantitativePayTotal - detailAmount)
+  return {
+    hasSalaryData: records.length > 0,
+    hasDetailData,
+    totalPeople: new Set(records.map(record => record.gridAccount).filter(Boolean)).size,
+    fixedPayTotal: sum('fixedPay'),
+    quantitativePayTotal,
+    enterpriseWithholdingTotal: sum('enterpriseWithholding'),
+    personalWithholdingTotal: sum('personalWithholding'),
+    netPayTotal: sum('calculatedNetPay'),
+    detailAmount: toNumber(detailAmount),
+    quantitativeDifference,
+    reconciliationStatus: !records.length
+      ? 'salary_missing'
+      : !hasDetailData
+        ? 'detail_missing'
+        : Math.abs(quantitativeDifference) <= 0.01
+          ? 'matched'
+          : 'mismatch'
+  }
+}
+
+async function getMySalary(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  const settlementMonth = data.settlementMonth || (data.filters && data.filters.settlementMonth) || formatMonth(new Date())
+  const access = await resolveAccess(user)
+  if (access.canViewManagedFeedbacks) {
+    return { success: true, data: { settlementMonth, record: null } }
+  }
+  if (!user.gridAccount) {
+    return { success: true, data: { settlementMonth, record: null } }
+  }
+
+  let records = []
+  try {
+    records = await fetchAllRecords(
+      db.collection(COLLECTIONS.SALARY_RECORDS).where({ gridAccount: user.gridAccount })
+    )
+  } catch (error) {
+    if (!isCollectionNotFoundError(error)) throw error
+  }
+  const record = records
+    .filter(item => item.settlementMonth === settlementMonth && item.status !== 'inactive')
+    .sort((left, right) => new Date(right.updateTime || right.createTime || 0) - new Date(left.updateTime || left.createTime || 0))[0]
+
+  return {
+    success: true,
+    data: {
+      settlementMonth,
+      record: record ? buildMySalaryRecord(record) : null
+    }
+  }
+}
+
+async function getSalaryImportBatches(wxContext, data = {}) {
+  const user = await ensureUser(wxContext.OPENID)
+  ensureLineProjectWorkspace(user)
+  ensureSystemAdminRole(user)
+  const settlementMonth = data.settlementMonth || (data.filters && data.filters.settlementMonth) || ''
+  let records = []
+  try {
+    records = await fetchAllRecords(db.collection(COLLECTIONS.SALARY_BATCHES))
+  } catch (error) {
+    if (!isCollectionNotFoundError(error)) throw error
+  }
+  if (settlementMonth) records = records.filter(record => record.settlementMonth === settlementMonth)
+  records = records.sort((left, right) => new Date(right.createTime || 0) - new Date(left.createTime || 0))
+  return {
+    success: true,
+    data: {
+      records: records.slice(0, 30).map(record => ({
+        ...record,
+        createTimeText: formatDateTime(record.createTime)
+      }))
+    }
   }
 }
 
@@ -2283,6 +2801,20 @@ async function getDashboard(wxContext, data = {}) {
   if (!access.canManage) throw new Error('当前账号没有管理看板权限')
   const stats = buildDashboardStats(records)
   const breakdowns = buildDashboardBreakdowns(records)
+  const settlementMonth = filters.settlementMonth || formatMonth(new Date())
+  const salaryRecords = access.canViewSalarySummary
+    ? await getSalaryRecordsByMonth(settlementMonth)
+    : []
+  const scopedSalaryRecords = access.isSystemAdmin
+    ? salaryRecords
+    : salaryRecords.filter(record => access.managedDistricts.includes(record.district))
+  const salarySummary = access.canViewSalarySummary
+    ? buildSalaryDashboardSummary(
+      scopedSalaryRecords,
+      stats.totalAmount,
+      records.length > 0
+    )
+    : null
 
   return {
     success: true,
@@ -2301,7 +2833,8 @@ async function getDashboard(wxContext, data = {}) {
       districtComposition: breakdowns.districtComposition,
       personTopList: stats.personTopList,
       workOrderTopList: stats.workOrderTopList,
-      filterOptions: getFilterOptions(records)
+      filterOptions: getFilterOptions(records),
+      salarySummary
     }
   }
 }
@@ -2580,5 +3113,7 @@ module.exports.__test__ = {
   resolveEvidenceDistrict,
   getEvidenceRecordType,
   buildEvidenceDistrictStatuses,
-  getEffectiveFeedbackStatus
+  isProcessingFeedbackStatus,
+  getEffectiveFeedbackStatus,
+  parseSalaryWorkbook
 }

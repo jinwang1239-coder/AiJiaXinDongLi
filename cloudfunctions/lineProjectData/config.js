@@ -143,7 +143,8 @@ const DISTRICT_LEADER_ROSTER = [
 const SYSTEM_ADMIN_ROSTER = [
   { name: '张斌', gridAccount: '18707123688' },
   { name: '刘炽', gridAccount: '13995951983' },
-  { name: '李奇琦', gridAccount: '15171129197' }
+  { name: '李奇琦', gridAccount: '15171129197' },
+  { name: '王谨', gridAccount: '15871165073' }
 ]
 
 module.exports = {

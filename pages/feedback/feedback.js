@@ -42,6 +42,7 @@ Page({
     submitting: false,
     reviewing: false,
     resolvingId: '',
+    updatingId: '',
     profileCompleted: false,
     handleMode: false,
     hasSubmittedThisMonth: false,
@@ -139,7 +140,16 @@ Page({
 
   getStatusText(status) {
     if (this.isLineProjectContext()) {
-      return ['resolved', 'approved', 'rejected'].includes(status) ? '已反馈' : '待反馈'
+      const statusMap = {
+        pending: '待处理人答复',
+        processing: '待处理人答复',
+        awaiting_submitter: '待您确认',
+        closed: '已解决',
+        resolved: '待您确认',
+        approved: '待您确认',
+        rejected: '待您确认'
+      }
+      return statusMap[status] || '待处理人答复'
     }
     const statusMap = {
       pending: '待处理',
@@ -154,7 +164,9 @@ Page({
 
   getStatusClass(status) {
     if (this.isLineProjectContext()) {
-      return ['resolved', 'approved', 'rejected'].includes(status) ? 'status-approved' : 'status-pending'
+      if (status === 'closed') return 'status-approved'
+      if (['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(status)) return 'status-processing'
+      return 'status-pending'
     }
     const statusClassMap = {
       pending: 'status-pending',
@@ -208,6 +220,54 @@ Page({
     }
   },
 
+  buildMessageList(record = {}) {
+    let messages = Array.isArray(record.messages) ? record.messages : []
+    if (!messages.length) {
+      const resolution = this.getResolution(record)
+      messages = [{
+        type: 'submitter_question',
+        sender: record.submitter || {},
+        senderRoleText: '一线员工',
+        content: record.content || '',
+        attachments: [],
+        roundNo: 1,
+        createTime: record.createTime
+      }]
+      if (resolution) {
+        messages.push({
+          type: 'handler_reply',
+          sender: resolution.handler || {},
+          senderRoleText: resolution.handlerRoleText || '问题处理人',
+          content: resolution.content || '',
+          attachments: resolution.attachments || [],
+          roundNo: 1,
+          createTime: resolution.resolveTime
+        })
+      }
+    }
+
+    return messages.map((message, index) => {
+      const sender = message.sender || {}
+      const senderName = sender.name || sender.realName || sender.gridAccount || '处理人'
+      const isHandler = message.type === 'handler_reply'
+      const isConfirmed = message.type === 'submitter_confirmed'
+      const attachments = Array.isArray(message.attachments) ? message.attachments : []
+      let title = `${senderName}（一线员工）提交问题`
+      if (message.type === 'submitter_follow_up') title = `${senderName}（一线员工）继续反馈`
+      if (isHandler) title = `${senderName}（${message.senderRoleText || '问题处理人'}）答复`
+      if (isConfirmed) title = `${senderName}（一线员工）确认已解决`
+      return {
+        ...message,
+        messageKey: `${message.roundNo || 1}_${message.type || 'message'}_${index}`,
+        title,
+        messageClass: isConfirmed ? 'message-confirmed' : isHandler ? 'message-handler' : 'message-submitter',
+        timeText: this.formatDateTime(message.createTime),
+        fileIDs: attachments.map(item => typeof item === 'string' ? item : item.fileID).filter(Boolean),
+        imageUrls: []
+      }
+    })
+  },
+
   buildRecordTitle(record) {
     return `${record.salaryMonth} ${this.data.recordTitleSuffix}`
   },
@@ -216,11 +276,14 @@ Page({
     return records.map(record => {
       const resolution = this.getResolution(record)
       const attachments = resolution && Array.isArray(resolution.attachments) ? resolution.attachments : []
-      const isResolved = ['resolved', 'approved', 'rejected'].includes(record.status)
+      const messages = this.buildMessageList(record)
       return {
         ...record,
         resolution,
-        isResolved,
+        messages,
+        isPending: ['pending', 'processing'].includes(record.status),
+        isAwaitingSubmitter: ['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(record.status),
+        isClosed: record.status === 'closed',
         recordTitle: this.buildRecordTitle(record),
         createTimeText: this.formatDateTime(record.createTime),
         managerStatusText: this.getStatusText(record.managerReview && record.managerReview.status),
@@ -239,13 +302,18 @@ Page({
         resolutionFileIDs: attachments.map(item => typeof item === 'string' ? item : item.fileID).filter(Boolean),
         resolutionImageUrls: [],
         responseText: '',
-        selectedImages: []
+        selectedImages: [],
+        followUpText: '',
+        followUpImages: []
       }
     })
   },
 
   async fillResolutionImageUrls(records = []) {
-    const fileIDs = [...new Set(records.flatMap(item => item.resolutionFileIDs || []))]
+    const fileIDs = [...new Set(records.flatMap(item => [
+      ...(item.resolutionFileIDs || []),
+      ...(item.messages || []).flatMap(message => message.fileIDs || [])
+    ]))]
     if (!fileIDs.length) return records
     const result = await wx.cloud.getTempFileURL({ fileList: fileIDs })
     const urlMap = {}
@@ -254,7 +322,11 @@ Page({
     })
     return records.map(item => ({
       ...item,
-      resolutionImageUrls: (item.resolutionFileIDs || []).map(fileID => urlMap[fileID]).filter(Boolean)
+      resolutionImageUrls: (item.resolutionFileIDs || []).map(fileID => urlMap[fileID]).filter(Boolean),
+      messages: (item.messages || []).map(message => ({
+        ...message,
+        imageUrls: (message.fileIDs || []).map(fileID => urlMap[fileID]).filter(Boolean)
+      }))
     }))
   },
 
@@ -368,10 +440,11 @@ Page({
 
   async loadPendingFeedbacks() {
     const resultData = await this.callFeedbackFunction('listPending', this.buildFeedbackPayload())
+    const records = await this.fillResolutionImageUrls(this.buildFeedbackList(resultData.records || []))
     this.setData({
       canApprove: !!resultData.canApprove,
       canResolve: !!resultData.canResolve,
-      pendingFeedbacks: this.buildFeedbackList(resultData.records || [])
+      pendingFeedbacks: records
     })
   },
 
@@ -546,6 +619,69 @@ Page({
     wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
   },
 
+  previewMessageImage(e) {
+    const list = e.currentTarget.dataset.source === 'pending'
+      ? this.data.pendingFeedbacks
+      : this.data.myFeedbacks
+    const record = list[Number(e.currentTarget.dataset.recordIndex)]
+    const message = record && record.messages[Number(e.currentTarget.dataset.messageIndex)]
+    const urls = message ? message.imageUrls || [] : []
+    if (urls.length) {
+      wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
+    }
+  },
+
+  onFollowUpInput(e) {
+    this.setData({
+      [`myFeedbacks[${Number(e.currentTarget.dataset.index)}].followUpText`]: e.detail.value
+    })
+  },
+
+  chooseFollowUpImages(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const record = this.data.myFeedbacks[index]
+    if (!record) return
+    const remainCount = 5 - (record.followUpImages || []).length
+    if (remainCount <= 0) return
+    wx.chooseMedia({
+      count: remainCount,
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      success: res => {
+        this.setData({
+          [`myFeedbacks[${index}].followUpImages`]: (record.followUpImages || []).concat(res.tempFiles || [])
+        })
+      }
+    })
+  },
+
+  removeFollowUpImage(e) {
+    const recordIndex = Number(e.currentTarget.dataset.recordIndex)
+    const images = (this.data.myFeedbacks[recordIndex].followUpImages || []).slice()
+    images.splice(Number(e.currentTarget.dataset.imageIndex), 1)
+    this.setData({ [`myFeedbacks[${recordIndex}].followUpImages`]: images })
+  },
+
+  previewFollowUpImage(e) {
+    const record = this.data.myFeedbacks[Number(e.currentTarget.dataset.recordIndex)]
+    const urls = (record.followUpImages || []).map(item => item.tempFilePath)
+    wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
+  },
+
+  async uploadFeedbackImages(record, images, folder, fileIDs = []) {
+    for (let imageIndex = 0; imageIndex < images.length; imageIndex += 1) {
+      const image = images[imageIndex]
+      const match = String(image.tempFilePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/)
+      const ext = match ? match[1].toLowerCase() : 'jpg'
+      const uploadResult = await wx.cloud.uploadFile({
+        cloudPath: `line_project_feedbacks/${record.salaryMonth}/${record._id}/${folder}_${Date.now()}_${imageIndex}.${ext}`,
+        filePath: image.tempFilePath
+      })
+      fileIDs.push(uploadResult.fileID)
+    }
+    return fileIDs
+  },
+
   async submitResolution(e) {
     const index = Number(e.currentTarget.dataset.index)
     const record = this.data.pendingFeedbacks[index]
@@ -560,16 +696,7 @@ Page({
     try {
       this.setData({ resolvingId: record._id })
       wx.showLoading({ title: '提交中' })
-      for (let imageIndex = 0; imageIndex < record.selectedImages.length; imageIndex += 1) {
-        const image = record.selectedImages[imageIndex]
-        const match = String(image.tempFilePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/)
-        const ext = match ? match[1].toLowerCase() : 'jpg'
-        const uploadResult = await wx.cloud.uploadFile({
-          cloudPath: `line_project_feedbacks/${record.salaryMonth}/${record._id}/${Date.now()}_${imageIndex}.${ext}`,
-          filePath: image.tempFilePath
-        })
-        uploadedFileIDs.push(uploadResult.fileID)
-      }
+      await this.uploadFeedbackImages(record, record.selectedImages || [], 'reply', uploadedFileIDs)
       await this.callFeedbackFunction('resolve', {
         feedbackId: record._id,
         responseText,
@@ -585,6 +712,62 @@ Page({
       wx.hideLoading()
       this.setData({ resolvingId: '' })
     }
+  },
+
+  async submitFollowUp(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const record = this.data.myFeedbacks[index]
+    if (!record || this.data.updatingId) return
+    const content = String(record.followUpText || '').trim()
+    if (!content) {
+      wx.showToast({ title: '请填写需要继续反馈的问题', icon: 'none' })
+      return
+    }
+
+    const uploadedFileIDs = []
+    try {
+      this.setData({ updatingId: record._id })
+      wx.showLoading({ title: '提交中' })
+      await this.uploadFeedbackImages(record, record.followUpImages || [], 'follow_up', uploadedFileIDs)
+      await this.callFeedbackFunction('continueFeedback', {
+        feedbackId: record._id,
+        content,
+        fileIDs: uploadedFileIDs
+      })
+      wx.showToast({ title: '补充反馈已提交', icon: 'success' })
+      await this.loadMyFeedbacks()
+    } catch (error) {
+      if (uploadedFileIDs.length) wx.cloud.deleteFile({ fileList: uploadedFileIDs }).catch(() => {})
+      console.error('继续反馈失败:', error)
+      wx.showToast({ title: error.message || '提交失败', icon: 'none' })
+    } finally {
+      wx.hideLoading()
+      this.setData({ updatingId: '' })
+    }
+  },
+
+  confirmFeedbackResolved(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const record = this.data.myFeedbacks[index]
+    if (!record || this.data.updatingId) return
+    wx.showModal({
+      title: '确认问题已解决',
+      content: '确认后该问题工单将结束，不能继续追加反馈。',
+      success: async res => {
+        if (!res.confirm) return
+        try {
+          this.setData({ updatingId: record._id })
+          await this.callFeedbackFunction('confirmResolved', { feedbackId: record._id })
+          wx.showToast({ title: '问题已解决', icon: 'success' })
+          await this.loadMyFeedbacks()
+        } catch (error) {
+          console.error('确认问题解决失败:', error)
+          wx.showToast({ title: error.message || '确认失败', icon: 'none' })
+        } finally {
+          this.setData({ updatingId: '' })
+        }
+      }
+    })
   },
 
   async reviewFeedback(e) {

@@ -5,6 +5,7 @@
     "pages/manage/manage",
     "pages/line-project/index",
     "pages/line-project/import",
+    "pages/line-project/salary-import",
     "pages/line-project/persons",
     "pages/line-project/workorders",
     "pages/line-project/evidence",

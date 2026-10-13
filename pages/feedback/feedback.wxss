@@ -183,6 +183,66 @@ page {
   background: #fff;
 }
 
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+
+.conversation-message {
+  padding: 18rpx 16rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  border-left: 6rpx solid #9aa8b7;
+}
+
+.conversation-message.message-handler {
+  border-left-color: #168568;
+  background: #f0faf6;
+}
+
+.conversation-message.message-confirmed {
+  border-left-color: #1d8f54;
+  background: #e8f8ef;
+}
+
+.conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.conversation-title {
+  flex: 1;
+  font-size: 25rpx;
+  font-weight: 600;
+  color: #304255;
+}
+
+.conversation-round {
+  font-size: 22rpx;
+  color: #7b8898;
+}
+
+.follow-up-block {
+  margin-top: 18rpx;
+  padding: 20rpx 16rpx;
+  border-radius: 16rpx;
+  background: #fff;
+}
+
+.closed-message {
+  margin-top: 18rpx;
+  padding: 18rpx 16rpx;
+  border-radius: 16rpx;
+  background: #e8f8ef;
+  color: #1d8f54;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
 .resolution-title {
   font-size: 25rpx;
   font-weight: 600;
