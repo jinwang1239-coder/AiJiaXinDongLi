@@ -72,40 +72,22 @@
           </picker>
         </view>
 
-        <view class="form-group cascade-selector">
+        <view class="form-group">
           <label class="form-label">业务名称 *</label>
 
-          <view class="cascade-item {{selectedCategory ? 'active' : ''}}">
-            <picker range="{{categories}}" range-key="name" value="{{categoryIndex}}" bindchange="onCategoryChange">
-              <view class="form-picker">
-                <text wx:if="{{selectedCategory}}">{{selectedCategory}}</text>
-                <text wx:else class="placeholder">请选择业务分类</text>
-              </view>
-            </picker>
-          </view>
-
-          <view class="cascade-item {{selectedSubcategory ? 'active' : ''}}" wx:if="{{subcategories.length > 0}}">
-            <picker range="{{subcategories}}" range-key="name" value="{{subcategoryIndex}}" bindchange="onSubcategoryChange">
-              <view class="form-picker">
-                <text wx:if="{{selectedSubcategory}}">{{selectedSubcategory}}</text>
-                <text wx:else class="placeholder">请选择业务子分类</text>
-              </view>
-            </picker>
-          </view>
-
-          <view class="cascade-item {{selectedProduct ? 'active' : ''}}" wx:if="{{products.length > 0}}">
-            <picker range="{{products}}" range-key="name" value="{{productIndex}}" bindchange="onProductChange">
-              <view class="form-picker">
-                <text wx:if="{{selectedProduct}}">{{selectedProduct}}</text>
-                <text wx:else class="placeholder">请选择具体业务</text>
-              </view>
-            </picker>
-          </view>
-
-          <view wx:if="{{formData.businessName}}" class="selected-business" style="margin-top: 20rpx; padding: 15rpx; background: #f0f7ff; border-radius: 8rpx; border-left: 4rpx solid #667eea;">
-            <text style="font-size: 26rpx; color: #666;">已选择：</text>
-            <text style="font-size: 28rpx; color: #333; font-weight: 500;">{{formData.businessName}}</text>
-          </view>
+          <picker
+            range="{{products}}"
+            range-key="name"
+            value="{{productIndex}}"
+            bindchange="onProductChange"
+          >
+            <view class="form-picker">
+              <text wx:if="{{formData.businessName}}">
+                {{formData.businessName}}
+              </text>
+              <text wx:else class="placeholder">请选择业务名称</text>
+            </view>
+          </picker>
         </view>
 
         <view class="form-group">

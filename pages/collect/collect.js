@@ -31,15 +31,8 @@ Page({
       attachments: []
     },
     estimatedCommission: 0,
-    categories: [],
-    subcategories: [],
     products: [],
-    selectedCategory: '',
-    selectedSubcategory: '',
-    selectedProduct: '',
-    categoryIndex: -1,
-    subcategoryIndex: -1,
-    productIndex: -1,
+    productIndex: 0,
     districts: DISTRICTS,
     userRole: null,
     currentUserGridAccount: '',
@@ -66,12 +59,9 @@ Page({
   },
 
   initData() {
-    const categories = productConfig.getCategories()
-    const dateStr = this.formatDate(new Date())
-
     this.setData({
-      categories,
-      'formData.date': dateStr
+      products: productConfig.getProducts(),
+      'formData.date': this.formatDate(new Date())
     })
   },
 
@@ -93,51 +83,28 @@ Page({
   },
 
   autoFillForm(lastData) {
-    const formData = {
-      ...this.data.formData,
-      district: lastData.district || this.data.formData.district,
-      userPhone: lastData.userPhone || this.data.formData.userPhone,
-      gridAccount: lastData.gridAccount || this.data.formData.gridAccount
-    }
+    const detail = commission.getCommissionDetail(lastData.businessName)
+    const businessName = detail ? detail.businessName : ''
+    const productIndex = this.data.products.findIndex(
+      product => product.name === businessName
+    )
 
-    if (lastData.businessName) {
-      formData.businessName = lastData.businessName
-      const productMatch = productConfig.searchProduct(lastData.businessName)
-      if (productMatch) {
-        this.selectProductByMatch(productMatch)
-      }
-    }
+    this.setData({
+      formData: {
+        ...this.data.formData,
+        district: lastData.district || this.data.formData.district,
+        userPhone: lastData.userPhone || this.data.formData.userPhone,
+        gridAccount: lastData.gridAccount || this.data.formData.gridAccount,
+        businessName
+      },
+      productIndex: productIndex >= 0 ? productIndex : 0
+    })
 
-    this.setData({ formData })
     this.calculateCommission()
 
     wx.showToast({
       title: '已自动填充',
       icon: 'success'
-    })
-  },
-
-  selectProductByMatch(match) {
-    const categories = this.data.categories
-    const categoryIndex = categories.findIndex((cat) => cat.name === match.category)
-    if (categoryIndex < 0) {
-      return
-    }
-
-    const subcategories = productConfig.getSubcategories(match.category)
-    const subcategoryIndex = subcategories.findIndex((sub) => sub.name === match.subcategory)
-    const products = productConfig.getProducts(match.category, match.subcategory)
-    const productIndex = products.findIndex((prod) => prod.name === match.product)
-
-    this.setData({
-      categoryIndex,
-      subcategories,
-      subcategoryIndex,
-      products,
-      productIndex,
-      selectedCategory: match.category || '',
-      selectedSubcategory: match.subcategory || '',
-      selectedProduct: match.product || ''
     })
   },
 
@@ -196,18 +163,10 @@ Page({
 
   onInputChange(e) {
     const { field } = e.currentTarget.dataset
-    const { value } = e.detail
 
     this.setData({
-      [`formData.${field}`]: value
+      [`formData.${field}`]: e.detail.value
     })
-
-    if (field === 'businessName') {
-      if (value && value.trim()) {
-        this.clearProductSelection()
-      }
-      this.calculateCommission()
-    }
   },
 
   onDateChange(e) {
@@ -223,88 +182,20 @@ Page({
     })
   },
 
-  onCategoryChange(e) {
-    const index = Number(e.detail.value)
-    const category = this.data.categories[index]
-    if (!category) {
-      wx.showToast({
-        title: '未找到业务分类',
-        icon: 'none'
-      })
-      return
-    }
-
-    const subcategories = productConfig.getSubcategories(category.name)
-    this.setData({
-      categoryIndex: index,
-      selectedCategory: category.name,
-      subcategories,
-      subcategoryIndex: -1,
-      productIndex: -1,
-      selectedSubcategory: '',
-      selectedProduct: '',
-      products: [],
-      'formData.businessName': ''
-    })
-
-    this.calculateCommission()
-  },
-
-  onSubcategoryChange(e) {
-    const index = Number(e.detail.value)
-    const subcategory = this.data.subcategories[index]
-    if (!subcategory) {
-      wx.showToast({
-        title: '未找到业务子分类',
-        icon: 'none'
-      })
-      return
-    }
-
-    const products = productConfig.getProducts(this.data.selectedCategory, subcategory.name)
-    this.setData({
-      subcategoryIndex: index,
-      selectedSubcategory: subcategory.name,
-      products,
-      productIndex: -1,
-      selectedProduct: '',
-      'formData.businessName': ''
-    })
-
-    this.calculateCommission()
-  },
-
   onProductChange(e) {
     const index = Number(e.detail.value)
     const product = this.data.products[index]
+
     if (!product) {
-      wx.showToast({
-        title: '未找到具体业务',
-        icon: 'none'
-      })
       return
     }
 
     this.setData({
       productIndex: index,
-      selectedProduct: product.name,
       'formData.businessName': product.name
     })
 
     this.calculateCommission()
-  },
-
-  clearProductSelection() {
-    this.setData({
-      categoryIndex: -1,
-      subcategoryIndex: -1,
-      productIndex: -1,
-      selectedCategory: '',
-      selectedSubcategory: '',
-      selectedProduct: '',
-      subcategories: [],
-      products: []
-    })
   },
 
   calculateCommission() {
@@ -539,8 +430,8 @@ Page({
       return false
     }
 
-    if (!formData.businessName) {
-      wx.showToast({ title: '请输入业务名称', icon: 'none' })
+    if (!commission.getCommissionDetail(formData.businessName)) {
+      wx.showToast({ title: '请选择有效的业务名称', icon: 'none' })
       return false
     }
 
@@ -658,14 +549,7 @@ Page({
         attachments: []
       },
       estimatedCommission: 0,
-      categoryIndex: -1,
-      subcategoryIndex: -1,
-      productIndex: -1,
-      selectedCategory: '',
-      selectedSubcategory: '',
-      selectedProduct: '',
-      subcategories: [],
-      products: [],
+      productIndex: 0,
       importResult: this.data.importResult
     })
   },

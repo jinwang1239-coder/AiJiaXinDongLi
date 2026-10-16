@@ -18,9 +18,7 @@ function saveLastFormData(formData) {
       district: formData.district,
       gridAccount: formData.gridAccount || '',
       userPhone: formData.userPhone,
-      category: formData.category,
-      subcategory: formData.subcategory,
-      item: formData.item,
+      businessName: formData.businessName,
       timestamp: Date.now()
     }
     

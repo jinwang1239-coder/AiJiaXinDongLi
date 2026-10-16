@@ -375,6 +375,13 @@ async function createBusinessRecord(wxContext, data) {
     developerGridAccount: targetUser.gridAccount
   }
 
+  if (!commissionRules.getCommissionDetail(recordInput.businessName)) {
+    return {
+      success: false,
+      error: '业务名称不在当前酬金配置中，请重新选择'
+    }
+  }
+
   const record = buildBusinessRecord(recordInput, targetUser, user, {
     source: data && data.source ? data.source : 'form'
   })

@@ -33,62 +33,24 @@ function normalizeCommissionDetails(details = {}) {
   return normalized
 }
 
+// 保留 category 和 subcategory 字段，兼容已有的酬金详情结构。
 function getAllProductEntries() {
-  const config = productConfig.PRODUCT_CONFIG || {}
-  const entries = []
-
-  Object.keys(config).forEach(category => {
-    Object.keys(config[category]).forEach(subcategory => {
-      Object.keys(config[category][subcategory]).forEach(productName => {
-        const product = config[category][subcategory][productName]
-        entries.push({
-          category,
-          subcategory,
-          productName,
-          product
-        })
-      })
-    })
-  })
-
-  return entries
+  return productConfig.getProducts().map(product => ({
+    category: '',
+    subcategory: product.name,
+    productName: product.name,
+    product
+  }))
 }
 
+//改为名称规范化后精确匹配
 function getMatchScore(searchName, entry) {
   const searchNormalized = normalizeName(searchName)
   const productNormalized = normalizeName(entry.productName)
-  const categoryNormalized = normalizeName(entry.category)
-  const subcategoryNormalized = normalizeName(entry.subcategory)
 
-  if (!searchNormalized || !productNormalized) {
-    return 0
-  }
-
-  if (productNormalized === searchNormalized) {
-    return 1000
-  }
-
-  if (productNormalized.includes(searchNormalized)) {
-    return 800 - productNormalized.length
-  }
-
-  if (searchNormalized.includes(productNormalized)) {
-    return 700 - productNormalized.length
-  }
-
-  if (subcategoryNormalized === searchNormalized) {
-    return 500
-  }
-
-  if (subcategoryNormalized.includes(searchNormalized)) {
-    return 420 - subcategoryNormalized.length
-  }
-
-  if (categoryNormalized === searchNormalized) {
-    return 300
-  }
-
-  return 0
+  return searchNormalized && searchNormalized === productNormalized
+    ? 1000
+    : 0
 }
 
 function findProductMatch(businessName) {
@@ -178,35 +140,17 @@ function getBusinessTypes() {
  * @returns {Array} 业务列表
  */
 function getBusinessByCategory(category, subcategory = null) {
-  const config = productConfig.PRODUCT_CONFIG || {}
-  const businessList = []
-  
-  if (config[category]) {
-    if (subcategory && config[category][subcategory]) {
-      // 指定了子分类
-      for (const productName in config[category][subcategory]) {
-        businessList.push({
-          name: productName,
-          commission: (config[category][subcategory][productName].commission && config[category][subcategory][productName].commission.total) ? config[category][subcategory][productName].commission.total : 0,
-          equivalentIncome: config[category][subcategory][productName].equivalentIncome || 0
-        })
-      }
-    } else {
-      // 只指定了大分类
-      for (const subcat in config[category]) {
-        for (const productName in config[category][subcat]) {
-          businessList.push({
-            name: productName,
-            subcategory: subcat,
-            commission: (config[category][subcat][productName].commission && config[category][subcat][productName].commission.total) ? config[category][subcat][productName].commission.total : 0,
-            equivalentIncome: config[category][subcat][productName].equivalentIncome || 0
-          })
-        }
-      }
-    }
-  }
-  
-  return businessList
+  return getAllProductEntries()
+    .filter(entry => (
+      (!category || entry.category === category) &&
+      (!subcategory || entry.subcategory === subcategory)
+    ))
+    .map(entry => ({
+      name: entry.productName,
+      subcategory: entry.subcategory,
+      commission: normalizeCommissionDetails(entry.product.commission).total,
+      equivalentIncome: entry.product.equivalentIncome || 0
+    }))
 }
 
 /**
