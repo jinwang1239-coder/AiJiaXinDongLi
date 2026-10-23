@@ -8,6 +8,7 @@ const db = cloud.database()
 const _ = db.command
 const MAX_QUERY_LIMIT = 100
 const ADMIN_ROLES = ['sales_department', 'system_admin']
+const salesContext = require('./sales-context')(db, fetchAll)
 
 const WORKSPACE_TYPES = {
   SALES: 'sales',
@@ -19,13 +20,13 @@ const FEEDBACK_SCENES = {
   LINE_PROJECT_WORKORDERS: 'line_project_workorders'
 }
 
-const LINE_PROJECT_FEEDBACK_STATUS = {
+const FEEDBACK_STATUS = {
   PENDING: 'pending',
   AWAITING_SUBMITTER: 'awaiting_submitter',
   CLOSED: 'closed'
 }
 
-const LINE_PROJECT_WORKFLOW_VERSION = 2
+const FEEDBACK_WORKFLOW_VERSION = 2
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -44,6 +45,8 @@ exports.main = async (event) => {
     switch (action) {
       case 'create':
         return await createFeedback(wxContext, data)
+      case 'getSalesContext':
+        return { success: true, data: await salesContext(await getCurrentUser(wxContext.OPENID, 'sales'), data && data.salaryMonth) }
       case 'listMine':
         return await listMyFeedbacks(wxContext, data)
       case 'listPending':
@@ -59,8 +62,6 @@ exports.main = async (event) => {
         return await continueFeedback(wxContext, data)
       case 'confirmResolved':
         return await confirmFeedbackResolved(wxContext, data)
-      case 'review':
-        return await reviewFeedback(wxContext, data)
       case 'test':
         return { success: true, message: 'salaryFeedback 云函数运行正常' }
       default:
@@ -79,8 +80,7 @@ exports.main = async (event) => {
 }
 
 function getCurrentMonthLabel() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7)
 }
 
 function isMonthlyFeedbackLimitEnabled(context = {}) {
@@ -97,7 +97,37 @@ function getDisplayName(user) {
   return String(user.realName || user.name || user.nickName || user.gridAccount || '').trim()
 }
 
+function getGridAccount(user) { return String(user.gridAccount || '').trim() }
+function normalizeDistrict(district) {
+  const value = String(district || '').trim()
+  return value === '公安县' ? '公安' : value
+}
+function isSalesHandler(user) {
+  return ['district_manager', ...ADMIN_ROLES].includes(user.role) ||
+    user.accountWorkspaceType === WORKSPACE_TYPES.LINE_PROJECT &&
+    (user.lineProjectRoles || []).some(role => ['district_manager', 'district_supervisor'].includes(role))
+}
+function canHandleSalesDistrict(user, district) {
+  if (!isSalesHandler(user)) return false
+  if (ADMIN_ROLES.includes(user.role)) return true
+  const districts = user.accountWorkspaceType === WORKSPACE_TYPES.LINE_PROJECT
+    ? (user.managedDistricts || []).concat(user.district || [])
+    : [user.salesManagedDistrict]
+  return districts.some(item => normalizeDistrict(item) === normalizeDistrict(district))
+}
+function feedbackUser(rawUser, requestedWorkspace) {
+  const user = normalizeUser(rawUser)
+  user.accountWorkspaceType = normalizeWorkspaceType(user.workspaceType)
+  const requested = normalizeWorkspaceType(requestedWorkspace || user.workspaceType)
+  if (requested !== user.accountWorkspaceType && user.role !== 'system_admin' &&
+    !(requested === WORKSPACE_TYPES.SALES && isSalesHandler(user))) {
+    throw new Error('当前账号不可访问该工作台反馈')
+  }
+  if (user.status === 'inactive') throw new Error('当前账号已停用')
+  return { ...user, workspaceType: requested }
+}
 function isProfileCompleted(user) {
+  if (user && user.workspaceType === WORKSPACE_TYPES.SALES) return !!(user.employeeId && user.salesClaimed)
   return !!user && !!(
     String(user.realName || '').trim() &&
     String(user.gridAccount || '').trim() &&
@@ -113,6 +143,7 @@ function normalizeUser(user = {}) {
     nickName: user.nickName || '',
     realName: user.realName || '',
     gridAccount: user.gridAccount || '',
+    employeeId: user.employeeId || '',
     district: user.district || '',
     gridName: user.gridName || '',
     role: user.role || ''
@@ -126,6 +157,7 @@ function buildUserSnapshot(user) {
     nickName: user.nickName || '',
     realName: user.realName || '',
     gridAccount: user.gridAccount || '',
+    employeeId: user.employeeId || '',
     district: user.district || '',
     gridName: user.gridName || '',
     role: user.role || ''
@@ -135,7 +167,6 @@ function buildUserSnapshot(user) {
 function buildReviewSnapshot(user, district, gridAccount, roleText) {
   if (!user) {
     return {
-      openid: '',
       name: '',
       gridAccount: gridAccount || '',
       district: district || '',
@@ -146,9 +177,9 @@ function buildReviewSnapshot(user, district, gridAccount, roleText) {
   }
 
   return {
-    openid: user.openid || '',
     name: getDisplayName(user),
     gridAccount: user.gridAccount || '',
+    employeeId: user.employeeId || '',
     district: district || user.district || '',
     status: 'pending',
     reviewTime: null
@@ -164,7 +195,7 @@ function buildProcessLog(action, user, note = '') {
   }
 }
 
-function getRouteGridAccount(config) {
+function getRouteAccount(config) {
   if (!config) {
     return ''
   }
@@ -176,48 +207,17 @@ function getRouteGridAccount(config) {
   return String(config.gridAccount || '').trim()
 }
 
-function resolveFeedbackStatus(managerStatus, supervisorStatus) {
-  if (managerStatus === 'rejected' || supervisorStatus === 'rejected') {
-    return 'rejected'
-  }
-
-  if (managerStatus === 'approved' || supervisorStatus === 'approved') {
-    return 'approved'
-  }
-
-  return 'pending'
-}
-
 function getEffectiveFeedbackStatus(record = {}) {
-  if (normalizeRecordContext(record).workspaceType === WORKSPACE_TYPES.LINE_PROJECT) {
-    const status = String(record.status || '').trim()
-    if (record.employeeConfirmed || status === LINE_PROJECT_FEEDBACK_STATUS.CLOSED) {
-      return LINE_PROJECT_FEEDBACK_STATUS.CLOSED
-    }
-    if (status === LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER) {
-      return LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER
-    }
-    if (Number(record.workflowVersion || 0) >= LINE_PROJECT_WORKFLOW_VERSION) {
-      return LINE_PROJECT_FEEDBACK_STATUS.PENDING
-    }
-    if (
-      record.resolution ||
-      ['resolved', 'approved', 'rejected'].includes(status) ||
-      ['resolved', 'approved', 'rejected'].includes(record.managerReview && record.managerReview.status) ||
-      ['resolved', 'approved', 'rejected'].includes(record.supervisorReview && record.supervisorReview.status)
-    ) {
-      return LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER
-    }
-    return LINE_PROJECT_FEEDBACK_STATUS.PENDING
+  const status = String(record.status || '').trim()
+  if (record.employeeConfirmed || status === 'closed') return 'closed'
+  if (status === 'awaiting_submitter') return 'awaiting_submitter'
+  if (Number(record.workflowVersion || 0) >= FEEDBACK_WORKFLOW_VERSION) return 'pending'
+  if (record.resolution || ['resolved', 'approved', 'rejected'].includes(status) ||
+    ['resolved', 'approved', 'rejected'].includes(record.managerReview && record.managerReview.status) ||
+    ['resolved', 'approved', 'rejected'].includes(record.supervisorReview && record.supervisorReview.status)) {
+    return 'awaiting_submitter'
   }
-
-  if (record.resolution || record.status === 'resolved') return 'resolved'
-  const resolvedStatus = resolveFeedbackStatus(
-    record.managerReview && record.managerReview.status,
-    record.supervisorReview && record.supervisorReview.status
-  )
-  if (resolvedStatus !== 'pending') return resolvedStatus
-  return ['approved', 'rejected'].includes(record.status) ? record.status : 'pending'
+  return 'pending'
 }
 
 function normalizeFeedbackStatus(record = {}, options = {}) {
@@ -225,9 +225,9 @@ function normalizeFeedbackStatus(record = {}, options = {}) {
   if (
     options.hasConfirmedMonth &&
     normalizeRecordContext(record).workspaceType === WORKSPACE_TYPES.LINE_PROJECT &&
-    status === LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER
+    status === FEEDBACK_STATUS.AWAITING_SUBMITTER
   ) {
-    status = LINE_PROJECT_FEEDBACK_STATUS.CLOSED
+    status = FEEDBACK_STATUS.CLOSED
   }
   return {
     ...record,
@@ -313,30 +313,30 @@ function buildFeedbackMessages(record = {}) {
   return messages
 }
 
-function getPendingReviewType(record, currentGridAccount) {
-  if (getEffectiveFeedbackStatus(record) !== 'pending') {
-    return ''
-  }
+function getRouteHandlerType(route, user) {
+  if (!route || route.status === 'inactive' || !getGridAccount(user)) return ''
+  if (user.workspaceType === WORKSPACE_TYPES.SALES) {
+    if (!canHandleSalesDistrict(user, route.district)) return ''
+  } else if (normalizeDistrict(user.district) !== normalizeDistrict(route.district)) return ''
+  const types = [['districtManager', 'manager'], ['supervisor', 'supervisor']].filter(([key]) => {
+    const member = route[key]
+    return getRouteAccount(member) === getGridAccount(user) &&
+      (!member.name || String(member.name).trim() === getDisplayName(user))
+  })
+  return types.length === 1 ? types[0][1] : ''
+}
 
-  if (
-    record &&
-    record.managerReview &&
-    record.managerReview.gridAccount === currentGridAccount &&
-    record.managerReview.status === 'pending'
-  ) {
-    return 'manager'
-  }
+function getPendingReviewType(record, user, route) {
+  if (getEffectiveFeedbackStatus(record) !== 'pending' ||
+    !route || normalizeDistrict(record.district) !== normalizeDistrict(route.district) ||
+    record.submitter && record.submitter.openid === user.openid) return ''
+  return getRouteHandlerType(route, user)
+}
 
-  if (
-    record &&
-    record.supervisorReview &&
-    record.supervisorReview.gridAccount === currentGridAccount &&
-    record.supervisorReview.status === 'pending'
-  ) {
-    return 'supervisor'
-  }
-
-  return ''
+async function hasUniqueHandlerAccount(user) {
+  if (!getGridAccount(user)) return false
+  const result = await db.collection(COLLECTIONS.USERS).where({ gridAccount: getGridAccount(user) }).limit(2).get()
+  return result.data.length === 1 && result.data[0]._id === user._id
 }
 
 async function fetchAll(query) {
@@ -388,7 +388,7 @@ function getDefaultScene(workspaceType) {
 }
 
 function resolveContext(data = {}, currentUser = {}) {
-  const workspaceType = normalizeWorkspaceType(currentUser.workspaceType)
+  const workspaceType = normalizeWorkspaceType(currentUser.role === 'system_admin' && data.workspaceType || currentUser.workspaceType)
   return { workspaceType, scene: getDefaultScene(workspaceType) }
 }
 
@@ -403,6 +403,8 @@ function normalizeRecordContext(record = {}) {
 }
 
 function matchContext(record, context) {
+  // 旧销售反馈随逐笔数据退役保留为历史档案，不混入员工编号的新业务流程。
+  if (context.workspaceType === WORKSPACE_TYPES.SALES && !record.employeeId) return false
   const recordContext = normalizeRecordContext(record)
   return (
     recordContext.workspaceType === context.workspaceType &&
@@ -450,24 +452,17 @@ function buildFeedbackSummaryRecord(record, options = {}) {
   }
 }
 
-async function getCurrentUser(openid) {
-  const result = await db.collection(COLLECTIONS.USERS).where({ openid }).limit(1).get()
-
-  if (!result.data || result.data.length === 0) {
-    throw new Error('用户不存在')
-  }
-
-  const user = normalizeUser(result.data[0])
-  if (user.status === 'inactive') {
-    throw new Error('当前账号已停用')
-  }
-  return user
+async function getCurrentUser(openid, requestedWorkspace) {
+  const result = await db.collection(COLLECTIONS.USERS).where({ openid }).limit(2).get()
+  if (!result.data || !result.data.length) throw new Error('用户不存在')
+  if (result.data.length !== 1) throw new Error('账号记录重复，请联系管理员')
+  return feedbackUser(result.data[0], requestedWorkspace)
 }
 
-async function getDistrictRoute(district) {
+async function getDistrictRoute(district, transaction) {
   let result
   try {
-    result = await db.collection(COLLECTIONS.ROUTES).where({ district }).get()
+    result = await db.collection(COLLECTIONS.ROUTES).where({ district: _.in(normalizeDistrict(district) === '公安' ? ['公安', '公安县'] : [district]) }).get()
   } catch (error) {
     if (isCollectionNotFoundError(error)) {
       throw new Error('请先在云数据库创建 feedback_routes 集合并配置区县反馈处理路由')
@@ -485,38 +480,50 @@ async function getDistrictRoute(district) {
     throw new Error('当前区县存在多条有效反馈处理路由')
   }
 
-  return routes[0]
+  if (!transaction) return routes[0]
+  const route = (await transaction.collection(COLLECTIONS.ROUTES).doc(routes[0]._id).get()).data
+  if (!route || route.status === 'inactive' || normalizeDistrict(route.district) !== normalizeDistrict(district)) {
+    throw new Error('区县处理人名单已变更，请刷新重试')
+  }
+  return route
 }
 
-async function findApproverByGridAccount(gridAccount, district) {
+async function findApproverByAccount(config, district, submitter) {
+  const gridAccount = getRouteAccount(config)
   if (!gridAccount) return null
-
-  const result = await db.collection(COLLECTIONS.USERS).where({ gridAccount }).limit(2).get()
+  const sales = submitter.workspaceType === WORKSPACE_TYPES.SALES
+  const result = await db.collection(COLLECTIONS.USERS).where(sales ? { gridAccount } :
+    { gridAccount, workspaceType: submitter.workspaceType }).limit(2).get()
   if (!result.data || result.data.length !== 1) return null
-
-  const user = normalizeUser(result.data[0])
-  if (user.status === 'inactive') return null
-  if (district && user.district && user.district !== district) return null
-
+  const raw = result.data[0]
+  if (raw.status === 'inactive' || config.name && String(config.name).trim() !== getDisplayName(raw)) return null
+  const user = feedbackUser(raw)
+  if (sales) {
+    if (!canHandleSalesDistrict(user, district)) return null
+    return { ...user, workspaceType: WORKSPACE_TYPES.SALES }
+  }
+  if (district && user.district && normalizeDistrict(user.district) !== normalizeDistrict(district)) return null
   return user
 }
 
 async function buildHandlerReviews(submitter, district) {
   const route = await getDistrictRoute(district)
-  const managerGridAccount = getRouteGridAccount(route.districtManager)
-  const supervisorGridAccount = getRouteGridAccount(route.supervisor)
+  const managerConfig = route['districtManager']
+  const supervisorConfig = route['supervisor']
+  const managerGridAccount = getRouteAccount(managerConfig)
+  const supervisorGridAccount = getRouteAccount(supervisorConfig)
   let [districtManager, supervisor] = await Promise.all([
-    findApproverByGridAccount(managerGridAccount, district),
-    findApproverByGridAccount(supervisorGridAccount, district)
+    findApproverByAccount(managerConfig, district, submitter),
+    findApproverByAccount(supervisorConfig, district, submitter)
   ])
 
-  if (districtManager && supervisor && districtManager.gridAccount === supervisor.gridAccount) {
+  if (districtManager && supervisor && getGridAccount(districtManager) === getGridAccount(supervisor)) {
     throw new Error('区县经理和基层监督员不能配置为同一人')
   }
-  if (districtManager && submitter.gridAccount === districtManager.gridAccount) districtManager = null
-  if (supervisor && submitter.gridAccount === supervisor.gridAccount) supervisor = null
+  if (districtManager && getGridAccount(submitter) === getGridAccount(districtManager)) districtManager = null
+  if (supervisor && getGridAccount(submitter) === getGridAccount(supervisor)) supervisor = null
   if (!districtManager && !supervisor) {
-    throw new Error('当前区县没有可用问题处理人，请先绑定区县经理或基层监督员账号')
+    throw new Error('当前区县没有可用问题处理人，请核对经理或监督员名单、网格通账号及管理权限')
   }
 
   return {
@@ -688,7 +695,7 @@ async function getRelatedWorkOrder(currentUser, salaryMonth, workOrderKey) {
 
 async function createFeedback(wxContext, data = {}) {
   const openid = wxContext.OPENID
-  const currentUser = await getCurrentUser(openid)
+  let currentUser = await getCurrentUser(openid, data.workspaceType)
   const context = resolveContext(data, currentUser)
 
   if (!isProfileCompleted(currentUser)) {
@@ -699,14 +706,14 @@ async function createFeedback(wxContext, data = {}) {
   }
 
   const content = String(data.content || '').trim()
-  if (!content) {
+  if (!content || content.length > 500) {
     return {
       success: false,
-      error: '请输入疑问内容'
+      error: '请输入1至500字的疑问内容'
     }
   }
 
-  if (!currentUser.district) {
+  if (!currentUser.district && context.workspaceType !== WORKSPACE_TYPES.SALES) {
     return {
       success: false,
       error: '当前用户未配置区县'
@@ -716,6 +723,13 @@ async function createFeedback(wxContext, data = {}) {
   const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
 
   let activeBatchNos = []
+  let salesSnapshot = null
+  if (context.workspaceType === WORKSPACE_TYPES.SALES) {
+    salesSnapshot = await salesContext(currentUser, salaryMonth)
+    if (data.sourceBatchId !== salesSnapshot.batchId) throw new Error('业务数据已更新，请重新打开反馈页面后提交')
+    currentUser = { ...currentUser, ...salesSnapshot }
+    activeBatchNos = [salesSnapshot.batchId]
+  }
   if (context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT) {
     activeBatchNos = await getActiveLineProjectBatchNos(openid, salaryMonth)
     if (!activeBatchNos.length) {
@@ -747,27 +761,24 @@ async function createFeedback(wxContext, data = {}) {
     ? await getRelatedWorkOrder(currentUser, salaryMonth, data.relatedWorkOrderKey)
     : null
   const feedback = {
-    gridAccount: currentUser.gridAccount,
+    gridAccount: currentUser.gridAccount || '',
+    employeeId: currentUser.employeeId || '',
     district: currentUser.district,
     gridName: currentUser.gridName || '',
     workspaceType: context.workspaceType,
     scene: context.scene,
     salaryMonth,
     importBatchNos: activeBatchNos,
-    salaryAmount: normalizeMoney(data.salaryAmount),
+    salaryAmount: salesSnapshot ? salesSnapshot.salaryAmount : normalizeMoney(data.salaryAmount),
     relatedWorkOrder,
     content,
-    status: LINE_PROJECT_FEEDBACK_STATUS.PENDING,
-    workflowVersion: context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT
-      ? LINE_PROJECT_WORKFLOW_VERSION
-      : 1,
+    status: FEEDBACK_STATUS.PENDING,
+    workflowVersion: FEEDBACK_WORKFLOW_VERSION,
     roundNo: 1,
     submitter: buildUserSnapshot(currentUser),
     managerReview,
     supervisorReview,
-    messages: context.workspaceType === WORKSPACE_TYPES.LINE_PROJECT
-      ? [buildFeedbackMessage('submitter_question', currentUser, content, [], 1, now, '一线员工')]
-      : [],
+    messages: [buildFeedbackMessage('submitter_question', currentUser, content, [], 1, now, '一线员工')],
     processLogs: [buildProcessLog('submitted', currentUser, content)],
     createTime: now,
     updateTime: now
@@ -798,7 +809,7 @@ async function createFeedback(wxContext, data = {}) {
 
 async function listMyFeedbacks(wxContext, data = {}) {
   const openid = wxContext.OPENID
-  const currentUser = await getCurrentUser(openid)
+  const currentUser = await getCurrentUser(openid, data.workspaceType)
   const context = resolveContext(data, currentUser)
 
   let records = []
@@ -831,82 +842,38 @@ async function listMyFeedbacks(wxContext, data = {}) {
 }
 
 async function listPendingFeedbacks(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const currentUser = await getCurrentUser(openid)
+  const currentUser = await getCurrentUser(wxContext.OPENID, data.workspaceType)
   const context = resolveContext(data, currentUser)
-
-  if (!currentUser.gridAccount) {
-    return {
-      success: true,
-      data: {
-        context,
-        title: getContextTitle(context),
-        canApprove: false,
-        canResolve: false,
-        records: []
-      }
-    }
-  }
-
-  let routeRecords = []
+  const empty = { success: true, data: { context, title: getContextTitle(context), canResolve: false, records: [] } }
+  if (currentUser.workspaceType === 'sales' && !isSalesHandler(currentUser) || !await hasUniqueHandlerAccount(currentUser)) return empty
+  let routes
   try {
-    routeRecords = await fetchAll(db.collection(COLLECTIONS.ROUTES))
+    routes = (await fetchAll(db.collection(COLLECTIONS.ROUTES))).filter(route => route.status !== 'inactive')
   } catch (error) {
-    if (isCollectionNotFoundError(error)) {
-      return {
-        success: true,
-        data: {
-          context,
-          title: getContextTitle(context),
-          canApprove: false,
-          canResolve: false,
-          records: []
-        }
-      }
-    }
+    if (isCollectionNotFoundError(error)) return empty
     throw error
   }
-
-  const activeRoutes = routeRecords.filter(route => route.status !== 'inactive')
-  const canApprove = activeRoutes.some(route => {
-    const managerGridAccount = getRouteGridAccount(route.districtManager)
-    const supervisorGridAccount = getRouteGridAccount(route.supervisor)
-    return managerGridAccount === currentUser.gridAccount || supervisorGridAccount === currentUser.gridAccount
-  })
-
+  // 同一区县存在重复有效名单时停止授权，避免名单冲突。
+  const activeRoutes = routes.filter(route => getRouteHandlerType(route, currentUser) &&
+    routes.filter(item => normalizeDistrict(item.district) === normalizeDistrict(route.district)).length === 1)
+  if (!activeRoutes.length) return empty
+  const districts = [...new Set(activeRoutes.flatMap(route => normalizeDistrict(route.district) === '公安'
+    ? ['公安', '公安县'] : [route.district]))]
   let relatedRecords = []
   try {
-    relatedRecords = await fetchAll(
-      db.collection(COLLECTIONS.FEEDBACKS).where(_.or([
-        { 'managerReview.gridAccount': currentUser.gridAccount },
-        { 'supervisorReview.gridAccount': currentUser.gridAccount }
-      ]))
-    )
+    relatedRecords = await fetchAll(db.collection(COLLECTIONS.FEEDBACKS).where({ district: _.in(districts) }))
   } catch (error) {
-    if (!isCollectionNotFoundError(error)) {
-      throw error
-    }
+    if (!isCollectionNotFoundError(error)) throw error
   }
-
   const records = sortByCreateTimeDesc(relatedRecords)
     .filter(record => matchContext(record, context))
-    .map(normalizeFeedbackStatus)
     .map(record => ({
-      ...record,
-      pendingReviewType: getPendingReviewType(record, currentUser.gridAccount)
+      ...normalizeFeedbackStatus(record),
+      pendingReviewType: getPendingReviewType(record, currentUser,
+        activeRoutes.find(route => normalizeDistrict(route.district) === normalizeDistrict(record.district)))
     }))
     .filter(record => record.pendingReviewType)
-
-  return {
-    success: true,
-    data: {
-      context,
-      title: getContextTitle(context),
-      canApprove,
-      canResolve: canApprove,
-      records
-    }
-  }
+  return { success: true, data: { context, title: getContextTitle(context), canResolve: true, records } }
 }
 
 async function resolveManagedFeedbackScope(currentUser) {
@@ -915,7 +882,8 @@ async function resolveManagedFeedbackScope(currentUser) {
   }
 
   const districts = new Set()
-  if (currentUser.role === 'district_manager' && currentUser.district) districts.add(currentUser.district)
+  const managedDistrict = currentUser.workspaceType === WORKSPACE_TYPES.SALES ? currentUser.salesManagedDistrict : currentUser.district
+  if (currentUser.role === 'district_manager' && managedDistrict) districts.add(managedDistrict)
   let routes = []
   try {
     routes = await fetchAll(db.collection(COLLECTIONS.ROUTES))
@@ -923,9 +891,9 @@ async function resolveManagedFeedbackScope(currentUser) {
     if (!isCollectionNotFoundError(error)) throw error
   }
   routes.filter(route => route.status !== 'inactive').forEach(route => {
-    const routeMembers = [route.supervisor, route.districtManager, route.districtLeader]
+    const routeMembers = ['supervisor', 'districtManager', 'districtLeader'].map(name => route[name])
     if (routeMembers.some(member => member && (
-      getRouteGridAccount(member) === currentUser.gridAccount &&
+      getRouteAccount(member) === getGridAccount(currentUser) &&
       (!member.name || String(member.name).trim() === String(currentUser.realName || '').trim()) &&
       route.district === currentUser.district
     ))) {
@@ -937,7 +905,8 @@ async function resolveManagedFeedbackScope(currentUser) {
 }
 
 async function listManagedFeedbacks(wxContext, data = {}) {
-  const currentUser = await getCurrentUser(wxContext.OPENID)
+  const currentUser = await getCurrentUser(wxContext.OPENID, data.workspaceType)
+  if (currentUser.workspaceType !== 'line_project') throw new Error('销售反馈请使用待处理反馈入口')
   const scope = await resolveManagedFeedbackScope(currentUser)
 
   const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
@@ -989,7 +958,7 @@ async function listManagedFeedbacks(wxContext, data = {}) {
 
 async function getSceneSummary(wxContext, data = {}) {
   const openid = wxContext.OPENID
-  const currentUser = await getCurrentUser(openid)
+  const currentUser = await getCurrentUser(openid, data.workspaceType)
   const context = resolveContext(data, currentUser)
   const salaryMonth = String(data.salaryMonth || getCurrentMonthLabel()).trim()
   const records = await getFeedbacksBySubmitter(openid, context, salaryMonth)
@@ -1000,8 +969,8 @@ async function getSceneSummary(wxContext, data = {}) {
     hasConfirmedMonth: confirmedMonths.has(salaryMonth)
   }))
   const record = normalizedRecords.find(item => [
-    LINE_PROJECT_FEEDBACK_STATUS.PENDING,
-    LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER
+    FEEDBACK_STATUS.PENDING,
+    FEEDBACK_STATUS.AWAITING_SUBMITTER
   ].includes(item.status)) || normalizedRecords[0] || null
 
   return {
@@ -1017,347 +986,106 @@ async function getSceneSummary(wxContext, data = {}) {
   }
 }
 
-async function resolveFeedback(wxContext, data = {}) {
-  const currentUser = await getCurrentUser(wxContext.OPENID)
+async function changeFeedback(wxContext, data, change) {
+  const operator = await getCurrentUser(wxContext.OPENID, data.workspaceType)
   const feedbackId = String(data.feedbackId || '').trim()
-  const responseText = String(data.responseText || '').trim()
-  const fileIDs = [...new Set((Array.isArray(data.fileIDs) ? data.fileIDs : [])
-    .map(item => String(item || '').trim())
-    .filter(Boolean))]
+  if (!feedbackId) throw new Error('缺少问题工单标识')
+  let status
+  await db.runTransaction(async transaction => {
+    const fresh = (await transaction.collection(COLLECTIONS.USERS).doc(operator._id).get()).data
+    if (!fresh || fresh.openid !== operator.openid) throw new Error('用户身份已变更，请重新登录')
+    const user = feedbackUser(fresh, data.workspaceType)
+    const record = (await transaction.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()).data
+    if (!record) throw new Error('问题工单不存在')
+    if (!matchContext(record, resolveContext(data, user))) throw new Error('不可处理其他工作台的反馈')
+    const updates = await change(record, user, transaction)
+    await transaction.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({ data: {
+      ...updates, workflowVersion: FEEDBACK_WORKFLOW_VERSION, updateTime: new Date()
+    } })
+    status = updates.status
+  })
+  return { success: true, data: { feedbackId, status } }
+}
 
-  if (!feedbackId) return { success: false, error: '缺少问题工单标识' }
-  if (!responseText) return { success: false, error: '请填写问题答复' }
-  if (fileIDs.length > 5) return { success: false, error: '每张问题工单最多上传5张图片' }
-  if (fileIDs.some(fileID => !fileID.startsWith('cloud://'))) {
-    return { success: false, error: '问题工单附件格式无效' }
-  }
+function feedbackReply(text, files) {
+  const content = String(text || '').trim()
+  if (!content || content.length > 500) throw new Error('请填写1至500字的问题或答复')
+  const fileIDs = [...new Set((Array.isArray(files) ? files : []).map(item => String(item || '').trim()).filter(Boolean))]
+  if (fileIDs.length > 5) throw new Error('每轮最多上传5张图片')
+  if (fileIDs.some(fileID => !fileID.startsWith('cloud://'))) throw new Error('问题工单附件格式无效')
+  return { content, fileIDs }
+}
 
-  let recordResult
-  try {
-    recordResult = await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()
-  } catch (error) {
-    if (isCollectionNotFoundError(error)) {
-      return { success: false, error: '请先在云数据库创建 salary_feedbacks 集合' }
+async function resolveFeedback(wxContext, data = {}) {
+  const { content, fileIDs } = feedbackReply(data.responseText, data.fileIDs)
+  return changeFeedback(wxContext, data, async (record, user, transaction) => {
+    if (user.workspaceType === WORKSPACE_TYPES.SALES && !canHandleSalesDistrict(user, record.district)) {
+      throw new Error('当前账号不可处理该区县销售反馈')
     }
-    throw error
-  }
-  const record = recordResult.data
-  if (!record) return { success: false, error: '问题工单不存在' }
-  if (normalizeRecordContext(record).workspaceType !== WORKSPACE_TYPES.LINE_PROJECT) {
-    return { success: false, error: '当前记录不是集客线路问题工单' }
-  }
-  if (getEffectiveFeedbackStatus(record) !== LINE_PROJECT_FEEDBACK_STATUS.PENDING) {
-    return { success: false, error: '该问题工单当前不需要处理人员答复' }
-  }
-
-  const handlerType = getPendingReviewType(record, currentUser.gridAccount)
-  if (!handlerType) return { success: false, error: '当前用户没有处理该问题工单的权限' }
-
-  const now = new Date()
-  const handlerRoleText = handlerType === 'manager' ? '区县经理' : '基层监督员'
-  const resolution = {
-    handlerType,
-    handlerRoleText,
-    handler: buildUserSnapshot(currentUser),
-    content: responseText,
-    attachments: fileIDs.map(fileID => ({ fileID })),
-    resolveTime: now
-  }
-  const managerReview = { ...(record.managerReview || {}) }
-  const supervisorReview = { ...(record.supervisorReview || {}) }
-  const handledReview = handlerType === 'manager' ? managerReview : supervisorReview
-  const skippedReview = handlerType === 'manager' ? supervisorReview : managerReview
-  handledReview.status = 'resolved'
-  handledReview.reviewTime = now
-  handledReview.reviewNote = responseText
-  Object.assign(handledReview, buildUserSnapshot(currentUser))
-  if (skippedReview.status === 'pending') {
-    skippedReview.status = 'not_required'
-    skippedReview.reviewNote = `已由${handlerRoleText}答复`
-  }
-
-  const processLogs = Array.isArray(record.processLogs) ? record.processLogs.slice() : []
-  const roundNo = Math.max(1, Number(record.roundNo || 1))
-  const messages = buildFeedbackMessages(record)
-  messages.push(buildFeedbackMessage(
-    'handler_reply',
-    currentUser,
-    responseText,
-    fileIDs,
-    roundNo,
-    now,
-    handlerRoleText
-  ))
-  processLogs.push(buildProcessLog('handler_replied', currentUser, responseText))
-  await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({
-    data: {
-      status: LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER,
-      workflowVersion: LINE_PROJECT_WORKFLOW_VERSION,
-      roundNo,
-      resolution,
-      managerReview,
-      supervisorReview,
-      messages,
-      processLogs,
-      updateTime: now
+    if (getEffectiveFeedbackStatus(record) !== FEEDBACK_STATUS.PENDING) throw new Error('该问题工单已答复或已结束，请刷新列表')
+    if (!await hasUniqueHandlerAccount(user)) throw new Error('处理人账号不唯一，请联系管理员')
+    const route = await getDistrictRoute(record.district, transaction)
+    const handlerType = getPendingReviewType(record, user, route)
+    if (!handlerType) throw new Error('当前用户不是该反馈的指定处理人')
+    const now = new Date()
+    const handlerRoleText = handlerType === 'manager' ? '区县经理' : '基层监督员'
+    const managerReview = { ...(record.managerReview || {}) }
+    const supervisorReview = { ...(record.supervisorReview || {}) }
+    const handled = handlerType === 'manager' ? managerReview : supervisorReview
+    const skipped = handlerType === 'manager' ? supervisorReview : managerReview
+    Object.assign(handled, buildUserSnapshot(user), { status: 'resolved', reviewTime: now, reviewNote: content })
+    if (skipped.status === 'pending') Object.assign(skipped, { status: 'not_required', reviewNote: '已由' + handlerRoleText + '答复' })
+    const roundNo = Math.max(1, Number(record.roundNo || 1))
+    return {
+      status: FEEDBACK_STATUS.AWAITING_SUBMITTER, roundNo, managerReview, supervisorReview,
+      resolution: { handlerType, handlerRoleText, handler: buildUserSnapshot(user), content,
+        attachments: normalizeAttachments(fileIDs), resolveTime: now },
+      messages: [...buildFeedbackMessages(record), buildFeedbackMessage('handler_reply', user, content, fileIDs, roundNo, now, handlerRoleText)],
+      processLogs: [...(record.processLogs || []), buildProcessLog('handler_replied', user, content)]
     }
   })
+}
 
-  return {
-    success: true,
-    data: { feedbackId, status: LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER }
+function assertSubmitterCanRespond(record, user) {
+  if (!record.submitter || record.submitter.openid !== user.openid) throw new Error('只能操作本人提交的问题工单')
+  if (getEffectiveFeedbackStatus(record) !== FEEDBACK_STATUS.AWAITING_SUBMITTER) {
+    throw new Error('当前工单尚未收到答复或已经结束')
   }
 }
 
 async function continueFeedback(wxContext, data = {}) {
-  const currentUser = await getCurrentUser(wxContext.OPENID)
-  const feedbackId = String(data.feedbackId || '').trim()
-  const content = String(data.content || '').trim()
-  const fileIDs = [...new Set((Array.isArray(data.fileIDs) ? data.fileIDs : [])
-    .map(item => String(item || '').trim())
-    .filter(Boolean))]
-
-  if (!feedbackId) return { success: false, error: '缺少问题工单标识' }
-  if (!content) return { success: false, error: '请填写需要继续反馈的问题' }
-  if (fileIDs.length > 5) return { success: false, error: '每轮反馈最多上传5张图片' }
-  if (fileIDs.some(fileID => !fileID.startsWith('cloud://'))) {
-    return { success: false, error: '问题工单附件格式无效' }
-  }
-
-  const recordResult = await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()
-  const record = recordResult.data
-  if (!record) return { success: false, error: '问题工单不存在' }
-  if (normalizeRecordContext(record).workspaceType !== WORKSPACE_TYPES.LINE_PROJECT) {
-    return { success: false, error: '当前记录不是集客线路问题工单' }
-  }
-  if (!record.submitter || record.submitter.openid !== currentUser.openid) {
-    return { success: false, error: '只能继续反馈本人提交的问题工单' }
-  }
-  if (getEffectiveFeedbackStatus(record) !== LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER) {
-    return { success: false, error: '当前工单尚未收到答复或已经结束' }
-  }
-
-  const context = normalizeRecordContext(record)
-  if (await getExistingLineProjectConfirm(currentUser.openid, record.salaryMonth, context)) {
-    return { success: false, error: '本月已完成签字确认，不能继续反馈' }
-  }
-
-  const { managerReview, supervisorReview } = await buildHandlerReviews(currentUser, record.district)
-  const now = new Date()
-  const roundNo = Math.max(1, Number(record.roundNo || 1)) + 1
-  const messages = buildFeedbackMessages(record)
-  messages.push(buildFeedbackMessage(
-    'submitter_follow_up',
-    currentUser,
-    content,
-    fileIDs,
-    roundNo,
-    now,
-    '一线员工'
-  ))
-  const processLogs = Array.isArray(record.processLogs) ? record.processLogs.slice() : []
-  processLogs.push(buildProcessLog('submitter_followed_up', currentUser, content))
-
-  await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({
-    data: {
-      status: LINE_PROJECT_FEEDBACK_STATUS.PENDING,
-      workflowVersion: LINE_PROJECT_WORKFLOW_VERSION,
-      roundNo,
-      managerReview,
-      supervisorReview,
-      messages,
-      processLogs,
-      updateTime: now
+  const { content, fileIDs } = feedbackReply(data.content, data.fileIDs)
+  return changeFeedback(wxContext, data, async (record, user) => {
+    assertSubmitterCanRespond(record, user)
+    if (await getExistingLineProjectConfirm(user.openid, record.salaryMonth, normalizeRecordContext(record))) {
+      throw new Error('本月已完成签字确认，不能继续反馈')
+    }
+    const reviews = await buildHandlerReviews(user, record.district)
+    const now = new Date()
+    const roundNo = Math.max(1, Number(record.roundNo || 1)) + 1
+    return {
+      ...reviews, status: FEEDBACK_STATUS.PENDING, roundNo, resolution: null,
+      messages: [...buildFeedbackMessages(record), buildFeedbackMessage('submitter_follow_up', user, content, fileIDs, roundNo, now, '一线员工')],
+      processLogs: [...(record.processLogs || []), buildProcessLog('submitter_followed_up', user, content)]
     }
   })
-
-  return { success: true, data: { feedbackId, status: LINE_PROJECT_FEEDBACK_STATUS.PENDING } }
 }
 
 async function confirmFeedbackResolved(wxContext, data = {}) {
-  const currentUser = await getCurrentUser(wxContext.OPENID)
-  const feedbackId = String(data.feedbackId || '').trim()
-  if (!feedbackId) return { success: false, error: '缺少问题工单标识' }
-
-  const recordResult = await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()
-  const record = recordResult.data
-  if (!record) return { success: false, error: '问题工单不存在' }
-  if (normalizeRecordContext(record).workspaceType !== WORKSPACE_TYPES.LINE_PROJECT) {
-    return { success: false, error: '当前记录不是集客线路问题工单' }
-  }
-  if (!record.submitter || record.submitter.openid !== currentUser.openid) {
-    return { success: false, error: '只能确认本人提交的问题工单' }
-  }
-  if (getEffectiveFeedbackStatus(record) !== LINE_PROJECT_FEEDBACK_STATUS.AWAITING_SUBMITTER) {
-    return { success: false, error: '当前工单尚未收到答复或已经结束' }
-  }
-
-  const now = new Date()
-  const roundNo = Math.max(1, Number(record.roundNo || 1))
-  const messages = buildFeedbackMessages(record)
-  messages.push(buildFeedbackMessage(
-    'submitter_confirmed',
-    currentUser,
-    '确认问题已解决',
-    [],
-    roundNo,
-    now,
-    '一线员工'
-  ))
-  const processLogs = Array.isArray(record.processLogs) ? record.processLogs.slice() : []
-  processLogs.push(buildProcessLog('submitter_confirmed', currentUser, '确认问题已解决'))
-
-  await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({
-    data: {
-      status: LINE_PROJECT_FEEDBACK_STATUS.CLOSED,
-      workflowVersion: LINE_PROJECT_WORKFLOW_VERSION,
-      employeeConfirmed: true,
-      closedBy: buildUserSnapshot(currentUser),
-      closedTime: now,
-      messages,
-      processLogs,
-      updateTime: now
+  return changeFeedback(wxContext, data, async (record, user) => {
+    assertSubmitterCanRespond(record, user)
+    const now = new Date()
+    return {
+      status: FEEDBACK_STATUS.CLOSED, employeeConfirmed: true,
+      closedBy: buildUserSnapshot(user), closedTime: now,
+      messages: [...buildFeedbackMessages(record), buildFeedbackMessage('submitter_confirmed', user, '确认问题已解决', [], record.roundNo, now, '一线员工')],
+      processLogs: [...(record.processLogs || []), buildProcessLog('submitter_confirmed', user, '确认问题已解决')]
     }
   })
-
-  return { success: true, data: { feedbackId, status: LINE_PROJECT_FEEDBACK_STATUS.CLOSED } }
-}
-
-async function reviewFeedback(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const currentUser = await getCurrentUser(openid)
-  const feedbackId = String(data.feedbackId || '').trim()
-  const action = String(data.action || '').trim()
-  const reviewNote = String(data.reviewNote || '').trim()
-
-  if (!feedbackId) {
-    return {
-      success: false,
-      error: '缺少反馈记录标识'
-    }
-  }
-
-  if (!['approved', 'rejected'].includes(action)) {
-    return {
-      success: false,
-      error: '审批动作无效'
-    }
-  }
-
-  if (action === 'rejected' && !reviewNote) {
-    return { success: false, error: '驳回时请填写处理意见' }
-  }
-
-  let recordResult
-  try {
-    recordResult = await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).get()
-  } catch (error) {
-    if (isCollectionNotFoundError(error)) {
-      return {
-        success: false,
-        error: '请先在云数据库创建 salary_feedbacks 集合'
-      }
-    }
-    throw error
-  }
-  const record = recordResult.data
-
-  if (!record) {
-    return {
-      success: false,
-      error: '反馈记录不存在'
-    }
-  }
-
-  if (normalizeRecordContext(record).workspaceType === WORKSPACE_TYPES.LINE_PROJECT) {
-    return { success: false, error: '集客线路问题工单请使用问题答复功能处理' }
-  }
-
-  if (['approved', 'rejected'].includes(getEffectiveFeedbackStatus(record))) {
-    return {
-      success: false,
-      error: '该反馈已完成审批'
-    }
-  }
-
-  const reviewType = getPendingReviewType(record, currentUser.gridAccount)
-  if (!reviewType) {
-    return {
-      success: false,
-      error: '当前用户没有审批权限'
-    }
-  }
-
-  const now = new Date()
-  const managerReview = {
-    ...(record.managerReview || {})
-  }
-  const supervisorReview = {
-    ...(record.supervisorReview || {})
-  }
-
-  if (reviewType === 'manager') {
-    managerReview.status = action
-    managerReview.reviewTime = now
-    managerReview.openid = currentUser.openid
-    managerReview.name = getDisplayName(currentUser)
-    managerReview.gridAccount = currentUser.gridAccount
-    managerReview.district = currentUser.district || record.district || ''
-    managerReview.reviewNote = reviewNote
-    if (supervisorReview.status === 'pending') {
-      supervisorReview.status = 'not_required'
-      supervisorReview.reviewNote = '已由区县经理处理'
-    }
-  } else {
-    supervisorReview.status = action
-    supervisorReview.reviewTime = now
-    supervisorReview.openid = currentUser.openid
-    supervisorReview.name = getDisplayName(currentUser)
-    supervisorReview.gridAccount = currentUser.gridAccount
-    supervisorReview.district = currentUser.district || record.district || ''
-    supervisorReview.reviewNote = reviewNote
-    if (managerReview.status === 'pending') {
-      managerReview.status = 'not_required'
-      managerReview.reviewNote = '已由基层监督员处理'
-    }
-  }
-
-  const status = resolveFeedbackStatus(managerReview.status, supervisorReview.status)
-  const processLogs = Array.isArray(record.processLogs) ? record.processLogs.slice() : []
-  processLogs.push(buildProcessLog(`${reviewType}_${action}`, currentUser, reviewNote))
-
-  try {
-    await db.collection(COLLECTIONS.FEEDBACKS).doc(feedbackId).update({
-      data: {
-        managerReview,
-        supervisorReview,
-        processLogs,
-        status,
-        updateTime: now
-      }
-    })
-  } catch (error) {
-    if (isCollectionNotFoundError(error)) {
-      return {
-        success: false,
-        error: '请先在云数据库创建 salary_feedbacks 集合'
-      }
-    }
-    throw error
-  }
-
-  return {
-    success: true,
-    data: {
-      feedbackId,
-      status
-    }
-  }
 }
 
 module.exports.__test__ = {
   resolveContext,
-  resolveFeedbackStatus,
   getEffectiveFeedbackStatus,
   normalizeFeedbackStatus,
   buildFeedbackMessages,

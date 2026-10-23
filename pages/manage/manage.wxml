@@ -1,292 +1,43 @@
-<!--pages/manage/manage.wxml-->
-<navigation-bar title="业务数据管理" back="{{false}}" color="black" background="#FFF"></navigation-bar>
-
-<scroll-view class="page-container" scroll-y type="list" bindscrolltolower="onReachBottom">
+<navigation-bar title="销售月度业务" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+<scroll-view class="page-container" scroll-y bindscrolltolower="onReachBottom">
   <view class="manage-container">
-    <view wx:if="{{workspaceType === 'line_project'}}" class="card line-project-entry">
-      <view class="card-header">
-        <view class="card-title">集客线路项目</view>
-        <view class="tag tag-primary">新模块</view>
-      </view>
-      <view class="card-content">进入集客开通、维护、计次及线路类工单的导入、统计与可视化页面。</view>
-      <button class="btn btn-primary line-project-btn" bindtap="navigateToLineProject">进入项目看板</button>
-    </view>
-
-    <!-- 统计卡片 -->
-    <view class="card stats-overview">
-      <view class="card-header">
-        <view class="card-title">数据统计</view>
-        <view class="stats-period">实时数据</view>
-      </view>
-      
+    <view class="card" wx:if="{{!loading && !error}}">
+      <view class="card-title">业务量与酬金</view>
       <view class="stats-grid">
-        <view class="stats-item">
-          <view class="stats-number">{{stats.totalRecords}}</view>
-          <view class="stats-label">总记录数</view>
-        </view>
-        <view class="stats-item">
-          <view class="stats-number">{{stats.todayRecords}}</view>
-          <view class="stats-label">今日新增</view>
-        </view>
-        <view class="stats-item">
-          <view class="stats-number">¥{{stats.totalCommission}}</view>
-          <view class="stats-label">累计酬金</view>
-        </view>
-        <view class="stats-item">
-          <view class="stats-number">¥{{stats.todayCommission}}</view>
-          <view class="stats-label">今日酬金</view>
-        </view>
-        <view class="stats-item">
-          <view class="stats-number">¥{{stats.settledCommission}}</view>
-          <view class="stats-label">已核算酬金</view>
-        </view>
-        <view class="stats-item">
-          <view class="stats-number">¥{{stats.unsettledCommission}}</view>
-          <view class="stats-label">未核算酬金</view>
-        </view>
+        <view>筛选业务量<view class="stats-number">{{stats.totalRecords || 0}}笔</view></view>
+        <view>筛选预计总酬金<view class="stats-number">￥{{stats.totalCommission || '0.00'}}</view></view>
+        <view>已到计划核发月<view>￥{{stats.settledCommission || '0.00'}}</view></view>
+        <view>后续预计核发<view>￥{{stats.unsettledCommission || '0.00'}}</view></view>
+      </view>
+      <view class="hint">按办理数量统计，计划进度截至{{referenceMonth}}，不代表实际工资到账。</view>
+    </view>
+    <view class="card">
+      <picker mode="date" fields="month" bindchange="onMonthChange"><view class="filter-field">{{filters.businessMonth || '选择业务月份'}}</view></picker>
+      <picker range="{{districts}}" bindchange="onDistrictChange"><view class="filter-field">{{filters.district || '选择区县'}}</view></picker>
+      <picker range="{{businessTypes}}" bindchange="onBusinessChange"><view class="filter-field">{{filters.businessName || '选择业务类型'}}</view></picker>
+      <input class="form-input" placeholder="姓名或员工编号" value="{{filters.developer}}" bindinput="onSearchInput" bindconfirm="search" />
+      <view class="actions">
+        <button size="mini" bindtap="search">查询</button><button size="mini" bindtap="resetFilter">重置</button><button size="mini" bindtap="showAllMonths">全部月份</button><button size="mini" bindtap="exportData" disabled="{{loading || !appliedFilters}}">导出Excel</button>
       </view>
     </view>
-
-    <!-- 操作工具栏 -->
-    <view class="toolbar">
-      <button class="btn btn-secondary filter-btn" bindtap="toggleFilter">
-        <text class="btn-icon">🔍</text>
-        <text>筛选</text>
-      </button>
-      
-      <button class="btn btn-primary export-btn" bindtap="showExportOptions">
-        <text class="btn-icon">📤</text>
-        <text>导出数据</text>
-      </button>
+    <view class="card record" wx:for="{{records}}" wx:key="_id" bindtap="openDetail" data-index="{{index}}">
+      <view class="card-title">{{item.businessName}} · {{item.quantity}}笔</view>
+      <view>{{item.developer}} / {{item.employeeId}}</view>
+      <view>{{item.businessMonth}} · {{item.district}} · {{item.statusText}}</view>
+      <view class="amount">￥{{item.commission}}</view>
+      <view class="hint">统计截至{{item.cutoffDate}}，点击查看分月金额</view>
     </view>
-
-    <!-- 筛选面板 -->
-    <view wx:if="{{showFilter}}" class="card filter-panel">
-      <view class="card-header">
-        <view class="card-title">数据筛选</view>
-        <view class="filter-actions">
-          <button class="btn-link" bindtap="resetFilter">重置</button>
-          <button class="btn-link primary" bindtap="applyFilter">应用</button>
-        </view>
-      </view>
-      
-      <view class="filter-content">
-        <!-- 日期范围 -->
-        <view class="filter-group">
-          <label class="filter-label">日期范围</label>
-          <view class="date-range">
-            <picker mode="date" value="{{filters.dateStart}}" data-field="dateStart" bindchange="onFilterDateChange">
-              <view class="date-picker">
-                <text wx:if="{{filters.dateStart}}">{{filters.dateStart}}</text>
-                <text wx:else class="placeholder">开始日期</text>
-              </view>
-            </picker>
-            <text class="date-separator">至</text>
-            <picker mode="date" value="{{filters.dateEnd}}" data-field="dateEnd" bindchange="onFilterDateChange">
-              <view class="date-picker">
-                <text wx:if="{{filters.dateEnd}}">{{filters.dateEnd}}</text>
-                <text wx:else class="placeholder">结束日期</text>
-              </view>
-            </picker>
-          </view>
-        </view>
-
-        <!-- 区县筛选 -->
-        <view wx:if="{{userRole !== 'sales_person'}}" class="filter-group">
-          <label class="filter-label">区县</label>
-          <picker range="{{districts}}" data-field="district" data-options="{{districts}}" bindchange="onFilterPickerChange">
-            <view class="filter-picker">
-              <text wx:if="{{filters.district}}">{{filters.district}}</text>
-              <text wx:else class="placeholder">选择区县</text>
-            </view>
-          </picker>
-        </view>
-
-        <!-- 业务类型筛选 -->
-        <view class="filter-group">
-          <label class="filter-label">业务类型</label>
-          <picker range="{{businessTypes}}" data-field="businessName" data-options="{{businessTypes}}" bindchange="onFilterPickerChange">
-            <view class="filter-picker">
-              <text wx:if="{{filters.businessName}}">{{filters.businessName}}</text>
-              <text wx:else class="placeholder">选择业务类型</text>
-            </view>
-          </picker>
-        </view>
-
-        <!-- 发展人员筛选 -->
-        <view class="filter-group">
-          <label class="filter-label">发展人员</label>
-          <picker range="{{developers}}" data-field="developer" data-options="{{developers}}" bindchange="onFilterPickerChange">
-            <view class="filter-picker">
-              <text wx:if="{{filters.developer}}">{{filters.developer}}</text>
-              <text wx:else class="placeholder">选择发展人员</text>
-            </view>
-          </picker>
-        </view>
-
-        <!-- 酬金范围 -->
-        <view class="filter-group">
-          <label class="filter-label">酬金范围</label>
-          <view class="commission-range">
-            <input 
-              class="commission-input" 
-              type="digit"
-              placeholder="最小值"
-              value="{{filters.commissionMin}}"
-              data-field="commissionMin"
-              bindinput="onFilterChange"
-            />
-            <text class="commission-separator">-</text>
-            <input 
-              class="commission-input" 
-              type="digit"
-              placeholder="最大值"
-              value="{{filters.commissionMax}}"
-              data-field="commissionMax"
-              bindinput="onFilterChange"
-            />
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 业务记录列表 -->
-    <view class="records-section">
-      <view class="section-header">
-        <view class="section-title">业务记录</view>
-        <view class="record-count">共{{stats.totalRecords}}条记录</view>
-      </view>
-
-      <!-- 记录列表 -->
-      <view wx:if="{{businessRecords.length > 0}}" class="records-list">
-        <view 
-          wx:for="{{businessRecords}}" 
-          wx:key="_id" 
-          class="record-item card"
-          data-index="{{index}}"
-          bindtap="viewRecord"
-        >
-          <view class="record-header">
-            <view class="record-date">{{item.date}}</view>
-            <view class="record-commission">¥{{item.commission}}</view>
-          </view>
-          
-          <view class="record-content">
-            <view class="record-info">
-              <view class="info-row">
-                <text class="info-label">区县：</text>
-                <text class="info-value">{{item.district}}</text>
-              </view>
-              <view class="info-row">
-                <text class="info-label">网格通：</text>
-                <text class="info-value">{{item.gridAccount}}</text>
-              </view>
-              <view class="info-row">
-                <text class="info-label">业务：</text>
-                <text class="info-value">{{item.businessName}}</text>
-              </view>
-              <view class="info-row">
-                <text class="info-label">号码：</text>
-                <text class="info-value">{{item.userPhone}}</text>
-              </view>
-              <view class="info-row">
-                <text class="info-label">发展人员：</text>
-                <text class="info-value">{{item.developer}}</text>
-              </view>
-            </view>
-
-            <view class="settlement-summary">
-              <view class="settlement-line">
-                <text class="settlement-label">已核算：</text>
-                <text class="settlement-value">{{item.settlementSummary.settledRangeText}} ¥{{item.settlementSummary.settledTotalText}}</text>
-              </view>
-              <view class="settlement-line">
-                <text class="settlement-label">未核算：</text>
-                <text class="settlement-value">{{item.settlementSummary.unsettledPeriodsText}} ¥{{item.settlementSummary.unsettledTotalText}}</text>
-              </view>
-            </view>
-            
-            <view class="record-actions">
-              <button 
-                wx:if="{{item.attachments && item.attachments.length > 0}}"
-                class="action-btn view-images-btn" 
-                data-index="{{index}}"
-                bindtap="previewImages"
-                catchtap="true"
-              >
-                📷 {{item.attachments.length}}
-              </button>
-              
-              <button 
-                wx:if="{{userRole === 'sales_department' || userRole === 'system_admin' || (userRole === 'sales_person' && (item.userId === currentOpenid || item.gridAccount === userGridAccount))}}"
-                class="action-btn delete-btn" 
-                data-index="{{index}}"
-                bindtap="deleteRecord"
-                catchtap="true"
-              >
-                🗑️
-              </button>
-            </view>
-          </view>
-          
-          <view class="record-footer">
-            <text class="create-time">{{item.createTime}}</text>
-          </view>
-        </view>
-      </view>
-
-      <!-- 空状态 -->
-      <view wx:else class="empty-state">
-        <view class="empty-icon">📭</view>
-        <view class="empty-text">暂无业务记录</view>
-        <view class="empty-tip">
-          <text wx:if="{{showFilter}}">尝试调整筛选条件</text>
-          <text wx:else>开始录入您的第一条业务信息吧</text>
-        </view>
-      </view>
-
-      <!-- 加载更多 -->
-      <view wx:if="{{hasMore && businessRecords.length > 0}}" class="load-more">
-        <view wx:if="{{loading}}" class="loading-text">加载中...</view>
-        <view wx:else class="load-more-text">上拉加载更多</view>
-      </view>
-      
-      <!-- 没有更多数据 -->
-      <view wx:if="{{!hasMore && businessRecords.length > 0}}" class="no-more">
-        <text>已加载全部数据</text>
-      </view>
-    </view>
+    <view class="hint" wx:if="{{error}}">{{error}}</view>
+    <view class="hint" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
+    <view class="hint" wx:if="{{!loading && !error && !records.length}}">当前筛选范围内暂无非零业务，请检查月份和筛选条件。</view>
+    <view class="hint" wx:if="{{loading}}">加载中…</view>
   </view>
 </scroll-view>
-
-<!-- 导出格式选择弹窗 -->
-<view wx:if="{{showExportModal}}" class="modal-overlay" bindtap="hideExportModal">
-  <view class="modal-container" catchtap="true">
-    <view class="modal-header">
-      <view class="modal-title">选择导出格式</view>
-      <view class="modal-close" bindtap="hideExportModal">×</view>
-    </view>
-    
-    <view class="modal-content">
-      <view class="export-options">
-        <view class="export-option" bindtap="exportData" data-format="xlsx">
-          <view class="option-icon">📊</view>
-          <view class="option-info">
-            <view class="option-title">Excel表格 (.xlsx)</view>
-            <view class="option-desc">生成Excel文件，可直接打开编辑</view>
-          </view>
-          <view class="option-arrow">></view>
-        </view>
-        
-        <view class="export-option" bindtap="exportData" data-format="csv">
-          <view class="option-icon">📋</view>
-          <view class="option-info">
-            <view class="option-title">CSV文本 (复制到剪贴板)</view>
-            <view class="option-desc">复制文本格式数据到剪贴板</view>
-          </view>
-          <view class="option-arrow">></view>
-        </view>
-      </view>
-    </view>
+<view class="modal-mask" wx:if="{{showDetail}}" bindtap="closeDetail">
+  <view class="modal-panel" catchtap="stopTap">
+    <view class="card-title">{{detail.businessName}} · {{detail.quantity}}笔</view>
+    <view>{{detail.employeeId}} {{detail.developer}}</view>
+    <view class="filter-field" wx:for="{{detail.settlementSchedule}}" wx:key="month">{{item.period}} / {{item.settlementMonth}}：￥{{item.amountText}} · {{item.statusText}}</view>
+    <button bindtap="closeDetail">关闭</button>
   </view>
 </view>

@@ -80,6 +80,13 @@ function getRoleText(user = {}) {
   return roleMap[user.role] || (isLineProjectWorkspace(user) ? '集客线路项目人员' : '未知角色')
 }
 
+function isProfileCompleted(user = {}) {
+  if (isSalesWorkspace(user) && user.role !== 'sales_person') return !!user.realName
+  if (isSystemAdmin(user)) return !!user.profileCompleted || !!(user.realName && user.gridAccount && user.district && user.gridName)
+  if (isSalesWorkspace(user)) return !!(user.employeeId && user.salesClaimed)
+  return !!user.profileCompleted || !!(user.realName && user.gridAccount && user.district && user.gridName)
+}
+
 function relaunchWorkspaceHome(input) {
   return new Promise((resolve, reject) => {
     wx.reLaunch({
@@ -127,6 +134,7 @@ function setPreferredWorkspaceType(workspaceType) {
 }
 
 module.exports = {
+  isProfileCompleted,
   WORKSPACE_TYPES,
   SYSTEM_ADMIN_ROLE,
   normalizeWorkspaceType,

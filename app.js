@@ -72,12 +72,7 @@ App({
       return
     }
 
-    const profileCompleted = !!user.profileCompleted || !!(
-      (user.realName || '').trim() &&
-      (user.gridAccount || '').trim() &&
-      (user.district || '').trim() &&
-      (user.gridName || '').trim()
-    )
+    const profileCompleted = workspace.isProfileCompleted(user)
 
     const currentWorkspaceType = workspace.getWorkspaceType(user)
     const userRole = workspace.isSystemAdmin(user) ? workspace.SYSTEM_ADMIN_ROLE : (user.role || null)

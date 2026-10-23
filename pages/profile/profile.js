@@ -1,170 +1,43 @@
 const auth = require('../../utils/auth')
 const gridOptions = require('../../utils/grid-options')
 const workspace = require('../../utils/workspace')
-
 Page({
   data: {
-    loading: false,
-    saving: false,
-    roleText: '',
-    districts: gridOptions.getDistricts(),
-    grids: [],
-    profileForm: {
-      nickName: '',
-      avatarUrl: '',
-      role: '',
-      workspaceType: workspace.WORKSPACE_TYPES.SALES,
-      realName: '',
-      gridAccount: '',
-      district: '',
-      gridName: ''
-    }
+    loading: false, saving: false, roleText: '', isSales: true, isManagement: false, claimed: false,
+    districts: gridOptions.getDistricts(), grids: [], profileForm: {}
   },
-
-  onShow() {
-    this.loadProfile()
-  },
-
-  async loadProfile() {
+  async onShow() {
     try {
-      this.setData({ loading: true })
-      const user = await auth.ensureLoggedIn()
-      if (!user) {
-        this.redirectToLogin()
-        return
-      }
-
-      this.setProfileState(user)
-    } catch (error) {
-      console.error('加载个人信息失败:', error)
-      wx.showToast({
-        title: '加载失败',
-        icon: 'error'
-      })
-    } finally {
-      this.setData({ loading: false })
-    }
+      if (!await auth.ensureLoggedIn()) { wx.switchTab({ url: '/pages/login/login' }); return }
+      this.setProfileState(await auth.getCurrentUserInfo())
+    } catch (error) { this.error(error) }
   },
-
-  redirectToLogin() {
-    wx.showToast({
-      title: '请先登录',
-      icon: 'none'
-    })
-    setTimeout(() => {
-      workspace.relaunchWorkspaceHome(workspace.WORKSPACE_TYPES.SALES)
-    }, 300)
-  },
-
-  async backToLogin() {
-    if (getCurrentPages().length > 1) {
-      wx.navigateBack({ delta: 1 })
-      return
-    }
-
-    const user = await auth.ensureLoggedIn()
-    await workspace.relaunchWorkspaceHome(user || workspace.WORKSPACE_TYPES.SALES)
-  },
-
   setProfileState(user) {
-    const district = user.district || ''
     this.setData({
-      roleText: workspace.getRoleText(user),
-      grids: gridOptions.getGridsByDistrict(district),
-      profileForm: {
-        nickName: user.nickName || '',
-        avatarUrl: user.avatarUrl || '',
-        role: user.role || '',
-        workspaceType: workspace.getWorkspaceType(user),
-        realName: user.realName || '',
-        gridAccount: user.gridAccount || '',
-        district,
-        gridName: user.gridName || ''
-      }
+      profileForm: { ...user }, roleText: workspace.getRoleText(user),
+      isSales: workspace.isSalesWorkspace(user) && user.role === 'sales_person',
+      isManagement: workspace.isSalesWorkspace(user) && user.role !== 'sales_person', claimed: !!user.salesClaimed,
+      grids: gridOptions.getGridsByDistrict(user.district)
     })
   },
-
-  onInputChange(e) {
-    const { field } = e.currentTarget.dataset
-    this.setData({
-      [`profileForm.${field}`]: e.detail.value
-    })
-  },
-
+  error(error) { wx.showModal({ title: '个人资料', content: error.message || '操作失败', showCancel: false }) },
+  onInputChange(e) { this.setData({ ['profileForm.' + e.currentTarget.dataset.field]: e.detail.value }) },
   onDistrictChange(e) {
-    const district = this.data.districts[Number(e.detail.value)] || ''
-    const grids = gridOptions.getGridsByDistrict(district)
-    this.setData({
-      grids,
-      'profileForm.district': district,
-      'profileForm.gridName': ''
-    })
+    const district = this.data.districts[Number(e.detail.value)]
+    this.setData({ 'profileForm.district': district, 'profileForm.gridName': '', grids: gridOptions.getGridsByDistrict(district) })
   },
-
-  onGridChange(e) {
-    const gridName = this.data.grids[Number(e.detail.value)] || ''
-    this.setData({
-      'profileForm.gridName': gridName
-    })
-  },
-
-  validateForm() {
-    const { realName, gridAccount, district, gridName } = this.data.profileForm
-
-    if (!realName.trim()) {
-      wx.showToast({ title: '请输入姓名', icon: 'none' })
-      return false
-    }
-
-    if (!gridAccount.trim()) {
-      wx.showToast({ title: '请输入网格通账号', icon: 'none' })
-      return false
-    }
-
-    if (!district) {
-      wx.showToast({ title: '请选择区县', icon: 'none' })
-      return false
-    }
-
-    if (!gridName) {
-      wx.showToast({ title: '请选择所属网格', icon: 'none' })
-      return false
-    }
-
-    return true
-  },
-
+  onGridChange(e) { this.setData({ 'profileForm.gridName': this.data.grids[Number(e.detail.value)] }) },
   async onSave() {
-    if (!this.validateForm()) {
-      return
-    }
-
+    if (this.data.saving || this.data.isManagement) return
+    this.setData({ saving: true })
     try {
-      this.setData({ saving: true })
-      const user = await auth.updateProfile({
-        realName: this.data.profileForm.realName,
-        gridAccount: this.data.profileForm.gridAccount,
-        district: this.data.profileForm.district,
-        gridName: this.data.profileForm.gridName
-      })
+      const user = await auth.updateProfile(this.data.profileForm)
       this.setProfileState(user)
-      wx.showToast({
-        title: user.lineProjectClaimedRecords > 0 ? `已认领${user.lineProjectClaimedRecords}条` : '保存成功',
-        icon: 'success'
-      })
-      setTimeout(() => {
-        this.backToLogin()
-      }, 500)
-    } catch (error) {
-      console.error('保存个人信息失败:', error)
-      const message = error.message || '保存失败'
-      if (message.includes('待认领数据') || message.includes('已认领集客线路数据')) {
-        wx.showModal({ title: '无法自动认领', content: message, showCancel: false })
-      } else {
-        wx.showToast({ title: message, icon: 'none' })
-      }
-    } finally {
-      this.setData({ saving: false })
-    }
+      wx.showToast({ title: this.data.isSales ? '认领成功' : '保存成功' })
+    } catch (error) { this.error(error) } finally { this.setData({ saving: false }) }
+  },
+  backToLogin() {
+    if (getCurrentPages().length > 1) wx.navigateBack()
+    else workspace.relaunchWorkspaceHome(this.data.profileForm)
   }
 })

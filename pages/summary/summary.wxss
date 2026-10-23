@@ -1,0 +1,21 @@
+page { background: #f5f7fa; }
+.summary-container { padding: 24rpx 24rpx 80rpx; }
+.card { background: #fff; padding: 28rpx; border-radius: 20rpx; margin-bottom: 24rpx; }
+.card-title { font-size: 32rpx; font-weight: 600; margin-bottom: 24rpx; }
+.filters { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+.filter-field { font-size: 28rpx; padding: 12rpx 0; }
+.overview { background: linear-gradient(150deg, #edf5ff, #fff); }
+.total-label, .money-label { color: #596b83; font-size: 26rpx; }
+.total-quantity { color: #365fc4; font-size: 64rpx; font-weight: 700; margin: 16rpx 0 28rpx; }
+.total-quantity text { font-size: 28rpx; font-weight: 400; }
+.money-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28rpx 16rpx; }
+.month { font-size: 24rpx; color: #7a8395; margin: 12rpx 0; }
+.money { font-size: 36rpx; font-weight: 600; color: #ce651e; word-break: break-all; }
+.hint { color: #7a8395; font-size: 24rpx; line-height: 1.7; margin-top: 16rpx; }
+.table-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 8rpx; align-items: center; padding: 22rpx 0; border-bottom: 1rpx solid #edf0f5; font-size: 26rpx; }
+.table-row > text { text-align: right; word-break: break-all; }
+.table-row > text:first-child { text-align: left; }
+.table-head { color: #7a8395; font-size: 24rpx; }
+.quantity { margin-top: 10rpx; color: #365fc4; font-weight: 600; }
+.error { color: #b34736; font-size: 26rpx; line-height: 1.7; }
+.error button { display: block; margin-top: 20rpx; }

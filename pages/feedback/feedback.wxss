@@ -162,20 +162,6 @@ page {
   word-break: break-all;
 }
 
-.review-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16rpx;
-  margin-top: 18rpx;
-}
-
-.review-item {
-  padding: 18rpx 16rpx;
-  border-radius: 16rpx;
-  background: #fff;
-}
-
-.resolution-block,
 .pending-message {
   margin-top: 18rpx;
   padding: 18rpx 16rpx;
@@ -243,22 +229,10 @@ page {
   font-weight: 600;
 }
 
-.resolution-title {
-  font-size: 25rpx;
-  font-weight: 600;
-  color: #168568;
-}
-
 .pending-message {
   font-size: 25rpx;
   line-height: 1.6;
   color: #5f6b7a;
-}
-
-.review-label {
-  margin-bottom: 10rpx;
-  font-size: 24rpx;
-  color: #6a7788;
 }
 
 .item-time {
@@ -278,13 +252,6 @@ page {
   border-radius: 24rpx;
   font-size: 24rpx;
   font-weight: 600;
-}
-
-.status-tag.small {
-  min-width: 0;
-  height: 40rpx;
-  padding: 0 14rpx;
-  font-size: 22rpx;
 }
 
 .status-pending {

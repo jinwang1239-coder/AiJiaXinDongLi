@@ -1,0 +1,8 @@
+.receipt-card { padding: 28rpx; margin-bottom: 24rpx; background: #fff; border-radius: 20rpx; }
+.title { font-size: 32rpx; font-weight: 600; margin-bottom: 24rpx; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28rpx; }
+.number { color: #365fc4; font-size: 36rpx; font-weight: 600; margin-top: 12rpx; }
+.district { border-top: 1rpx solid #edf0f5; padding-top: 22rpx; margin-top: 22rpx; }
+.header { display: flex; justify-content: space-between; font-weight: 600; }
+.rate { color: #365fc4; }
+.counts { font-size: 25rpx; margin-top: 16rpx; }

@@ -67,6 +67,7 @@ function getCurrentUserInfo() {
     }
   }).then(res => {
     if (!res.result.success) {
+      if (res.result.errorCode === 'ACCOUNT_UNAVAILABLE') logout()
       throw new Error(res.result.error || '获取用户信息失败')
     }
 
@@ -152,7 +153,8 @@ function login() {
           data: {
             action: 'login',
             data: {
-              userInfo: userProfile.userInfo
+              userInfo: userProfile.userInfo,
+              workspaceType: workspace.getPreferredWorkspaceType()
             }
           }
         })

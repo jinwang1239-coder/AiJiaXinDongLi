@@ -1,0 +1,34 @@
+<navigation-bar title="业务汇总" back="{{false}}" color="black" background="#FFF"></navigation-bar>
+<view class="summary-container">
+  <view class="card filters">
+    <picker mode="date" fields="month" value="{{businessMonth}}" bindchange="onMonthChange">
+      <view class="filter-field">业务月份：{{businessMonth}} ▾</view>
+    </picker>
+    <picker wx:if="{{summary.canFilterDistrict}}" range="{{summary.districtPickerOptions}}" value="{{districtIndex}}" bindchange="onDistrictChange">
+      <view class="filter-field">{{district || '全部区县'}} ▾</view>
+    </picker>
+  </view>
+  <view class="hint" wx:if="{{loading}}">加载中…</view>
+  <view class="card error" wx:if="{{error}}">{{error}}<button size="mini" bindtap="loadData">重新加载</button></view>
+  <block wx:if="{{summary}}">
+    <view class="card overview">
+      <view class="card-title">{{summary.scopeLabel}}业务汇总</view>
+      <view class="total-label">{{businessMonth}} · 总业务量</view>
+      <view class="total-quantity">{{summary.totalQuantity}}<text> 笔</text></view>
+      <view class="money-grid">
+        <view><view class="money-label">下月预估核发酬金</view><view class="month">{{summary.nextMonth}} · T+1</view><view class="money">￥{{summary.nextAmount}}</view></view>
+        <view><view class="money-label">下下月递延核发酬金</view><view class="month">{{summary.deferredMonth}} · T+2</view><view class="money">￥{{summary.deferredAmount}}</view></view>
+      </view>
+      <view class="hint">金额仅对应{{businessMonth}}办理业务的分期酬金，后续T+3至T+5金额可在数据管理中查看。预计金额不代表实际到账。</view>
+    </view>
+    <view class="card">
+      <view class="card-title">8类业务明细</view>
+      <view class="table-row table-head"><text>业务类型 / 数量</text><text>T+1金额</text><text>T+2金额</text></view>
+      <view class="table-row" wx:for="{{summary.products}}" wx:key="businessName">
+        <view>{{item.businessName}}<view class="quantity">{{item.quantity}}笔</view></view><text>￥{{item.nextAmount}}</text><text>￥{{item.deferredAmount}}</text>
+      </view>
+    </view>
+    <view class="card hint" wx:if="{{!summary.hasData}}">{{summary.scopeLabel === '个人' ? '本人当前月份暂无数据，请确认已认领员工编号，或选择其他业务月份。' : '该月份管理范围内暂无业务数据，请选择其他月份或等待发布。'}}</view>
+    <view class="card error" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
+  </block>
+</view>

@@ -5,6 +5,7 @@ cloud.init({
 })
 
 const db = cloud.database()
+const salesIdentity = require('./sales-identity')(db)
 const WORKSPACE_TYPES = {
   SALES: 'sales',
   LINE_PROJECT: 'line_project'
@@ -24,8 +25,11 @@ exports.main = async (event) => {
         return await updateProfile(wxContext, data)
       case 'getUserInfo':
         return await getUserInfo(wxContext)
-      case 'getUsersByRole':
-        return await getUsersByRole(wxContext, data)
+      case 'releaseSalesClaim': {
+        const users = await db.collection('users').where({ openid: wxContext.OPENID }).limit(2).get()
+        if (users.data.length !== 1) throw new Error('用户不存在')
+        return { success: true, data: await salesIdentity.release(users.data[0], data || {}) }
+      }
       case 'test':
         return { success: true, message: 'userManagement 云函数正常运行' }
       default:
@@ -36,6 +40,12 @@ exports.main = async (event) => {
     }
   } catch (error) {
     console.error('云函数执行错误:', error)
+    const message = String(error.message || '')
+    const missingCollection = message.match(/sales_(?:employees|active_versions|month_records|claim_logs)\b/)
+    if (missingCollection && (Number(error.errCode) === -502005 ||
+        /database collection not exists|Db or Table not exist|DATABASE_COLLECTION_NOT_EXIST/i.test(message))) {
+      return { success: false, error: '销售数据库尚未初始化：缺少集合 ' + missingCollection[0] + '，请联系管理员在当前云环境创建销售所需集合。' }
+    }
     return {
       success: false,
       error: error.message
@@ -46,7 +56,8 @@ exports.main = async (event) => {
 async function login(wxContext, data) {
   const { userInfo } = data
   const openid = wxContext.OPENID
-  const userQuery = await db.collection('users').where({ openid }).get()
+  const userQuery = await db.collection('users').where({ openid }).limit(2).get()
+  if (userQuery.data.length > 1) throw new Error('账号记录重复，请联系管理员')
 
   let user
   if (userQuery.data.length === 0) {
@@ -55,7 +66,7 @@ async function login(wxContext, data) {
       nickName: userInfo.nickName,
       avatarUrl: userInfo.avatarUrl,
       role: 'sales_person',
-      workspaceType: WORKSPACE_TYPES.SALES,
+      workspaceType: normalizeWorkspaceType(data.workspaceType),
       status: 'active',
       district: '',
       gridName: '',
@@ -118,7 +129,7 @@ async function login(wxContext, data) {
   return {
     success: true,
     data: {
-      user: normalizeUser(user),
+      user: normalizeUser(await salesIdentity.refresh(user)),
       isNewUser: userQuery.data.length === 0
     }
   }
@@ -126,6 +137,16 @@ async function login(wxContext, data) {
 
 async function updateProfile(wxContext, data = {}) {
   const openid = wxContext.OPENID
+  const account = await db.collection('users').where({ openid }).limit(2).get()
+  if (account.data.length !== 1) throw new Error('用户不存在或账号重复')
+  if (account.data[0].status === 'inactive') throw new Error('当前账号已停用')
+  if (account.data[0].role !== 'sales_person' && (account.data[0].workspaceType === WORKSPACE_TYPES.SALES ||
+      account.data[0].role === SYSTEM_ADMIN_ROLE && data.workspaceType === WORKSPACE_TYPES.SALES)) {
+    throw new Error('销售管理资料由后台维护，无需认领员工编号')
+  }
+  if (account.data[0].workspaceType === WORKSPACE_TYPES.SALES) {
+    return { success: true, data: normalizeUser(await salesIdentity.claim(account.data[0], data.employeeId)) }
+  }
   const profileData = {
     realName: (data.realName || '').trim(),
     gridAccount: (data.gridAccount || '').trim(),
@@ -410,51 +431,32 @@ function isCollectionNotFoundError(error) {
 
 async function getUserInfo(wxContext) {
   const openid = wxContext.OPENID
-  const result = await db.collection('users').where({ openid }).get()
+  const result = await db.collection('users').where({ openid }).limit(2).get()
 
   if (result.data.length === 0) {
     return {
       success: false,
+      errorCode: 'ACCOUNT_UNAVAILABLE',
       error: '用户不存在'
     }
   }
 
+  if (result.data.length !== 1 || result.data[0].status === 'inactive') {
+    return { success: false, errorCode: 'ACCOUNT_UNAVAILABLE', error: result.data.length !== 1 ? '账号记录重复，请联系管理员' : '当前账号已停用' }
+  }
   return {
     success: true,
-    data: normalizeUser(result.data[0])
-  }
-}
-
-async function getUsersByRole(wxContext, data) {
-  const openid = wxContext.OPENID
-  const { role } = data
-  const currentUser = await db.collection('users').where({ openid }).get()
-
-  if (currentUser.data.length === 0 || !['district_manager', 'sales_department', SYSTEM_ADMIN_ROLE].includes(normalizeUser(currentUser.data[0]).role)) {
-    return {
-      success: false,
-      error: '权限不足'
-    }
-  }
-
-  let query = db.collection('users')
-  if (role) {
-    query = query.where({ role })
-  }
-
-  const result = await query.get()
-  return {
-    success: true,
-    data: result.data.map(normalizeUser)
+    data: normalizeUser(await salesIdentity.refresh(result.data[0]))
   }
 }
 
 function normalizeUser(user) {
-  const profileCompleted = !!user.profileCompleted || isProfileCompleted(user)
   const role = getUserRole(user)
-  const workspaceType = role === SYSTEM_ADMIN_ROLE
-    ? WORKSPACE_TYPES.LINE_PROJECT
-    : normalizeWorkspaceType(user.workspaceType)
+  const management = role === SYSTEM_ADMIN_ROLE || user.workspaceType === WORKSPACE_TYPES.SALES && role !== 'sales_person'
+  const profileCompleted = management ? !!user.realName : user.workspaceType === WORKSPACE_TYPES.SALES
+    ? !!(user.employeeId && user.salesClaimed)
+    : (!!user.profileCompleted || isProfileCompleted(user))
+  const workspaceType = normalizeWorkspaceType(user.workspaceType)
 
   return {
     ...user,
@@ -464,6 +466,7 @@ function normalizeUser(user) {
     gridName: user.gridName || '',
     realName: user.realName || '',
     gridAccount: user.gridAccount || '',
+    employeeId: user.employeeId || '',
     profileCompleted,
     profileCompletedTime: user.profileCompletedTime || null
   }

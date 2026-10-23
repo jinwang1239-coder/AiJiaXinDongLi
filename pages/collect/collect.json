@@ -2,5 +2,5 @@
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar"
   },
-  "navigationBarTitleText": "信息收集"
+  "navigationBarTitleText": "销售业务量导入"
 }

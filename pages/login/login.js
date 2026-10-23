@@ -1,499 +1,138 @@
 const auth = require('../../utils/auth')
-const commission = require('../../utils/commission-fixed')
-const gridOptions = require('../../utils/grid-options')
 const workspace = require('../../utils/workspace')
+const { callSales, currentMonth, renderSalesData } = require('../../utils/sales-service')
+const emptyStats = () => ({ totalRecords: 0, monthRecords: 0, totalCommission: '0.00',
+  monthCommission: '0.00', settledCommission: '0.00', unsettledCommission: '0.00', currentDue: '0.00' })
 
 Page({
   data: {
-    userInfo: null,
-    hasUserInfo: false,
-    userRole: null,
-    workspaceType: workspace.WORKSPACE_TYPES.SALES,
-    selectedWorkspaceType: workspace.WORKSPACE_TYPES.SALES,
-    roleText: '',
-    profileCompleted: false,
-    showProfileModal: false,
-    monthLabel: '',
-    profileDisplayName: '未命名用户',
-    profileSubtitle: '请先补充所属网格信息',
-    loginPrompt: '请选择工作界面后再登录',
-    districts: gridOptions.getDistricts(),
-    grids: [],
-    profileForm: {
-      realName: '',
-      gridAccount: '',
-      district: '',
-      gridName: ''
-    },
-    stats: {
-      totalRecords: 0,
-      totalCommission: '0.00',
-      todayRecords: 0,
-      todayCommission: '0.00',
-      monthRecords: 0,
-      monthCommission: '0.00'
-    },
-    loading: false,
-    savingProfile: false
+    userInfo: null, hasUserInfo: false, userRole: '', isEmployee: true, selectedWorkspaceType: 'sales',
+    roleText: '', profileCompleted: false, showProfileModal: false, monthLabel: currentMonth(),
+    profileDisplayName: '', profileSubtitle: '', loginPrompt: '', canImport: false, canMaintain: false, claimed: false,
+    monthStatus: '', cutoffDate: '', profileForm: { employeeId: '' }, participation: null, scopeLabel: '',
+    stats: emptyStats(), loading: false, savingProfile: false, errorText: '', receiptWarning: '',
+    canHandleFeedback: false, pendingCount: 0, feedbackError: ''
   },
-
   onLoad() {
-    this.setMonthLabel()
-    this.initWorkspaceSelection()
-  },
-
-  async onShow() {
-    this.setMonthLabel()
-    const user = await this.checkLoginStatus()
-    if (!user) {
-      return
-    }
-
-    if (await this.routeByWorkspace(user, { selectedWorkspaceType: this.data.selectedWorkspaceType })) {
-      return
-    }
-
-    if (user.profileCompleted) {
-      this.loadUserStats()
-    }
-  },
-
-  initWorkspaceSelection() {
     const selectedWorkspaceType = workspace.getPreferredWorkspaceType()
-    this.setData({
-      selectedWorkspaceType,
-      loginPrompt: this.buildLoginPrompt(selectedWorkspaceType)
-    })
+    this.setData({ selectedWorkspaceType, loginPrompt: '已选择：' + workspace.getWorkspaceLabel(selectedWorkspaceType) })
   },
-
-  setMonthLabel() {
-    const now = new Date()
-    const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    this.setData({ monthLabel })
+  async onShow() {
+    this.visible = true
+    this.setData({ loading: true, participation: null, canImport: false, canMaintain: false })
+    try {
+      if (!await auth.ensureLoggedIn()) { this.setData({ hasUserInfo: false, loading: false }); return }
+      const user = await auth.getCurrentUserInfo()
+      if (!this.visible) return
+      this.setUserState(user)
+      if (workspace.isLineProjectWorkspace(user)) { await workspace.relaunchWorkspaceHome(user); return }
+      await this.loadDashboard()
+    } catch (error) {
+      if (this.visible) { this.setData({ loading: false, hasUserInfo: !!getApp().globalData.hasUserInfo }); this.error(error) }
+    }
   },
-
-  buildLoginPrompt(selectedWorkspaceType) {
-    return `已选择：${workspace.getWorkspaceLabel(selectedWorkspaceType)}`
-  },
-
+  onHide() { this.visible = false; this.requestId = (this.requestId || 0) + 1 },
+  onUnload() { this.onHide() },
+  error(error) { wx.showModal({ title: '提示', content: error.message || '操作失败', showCancel: false }) },
   selectWorkspace(e) {
     const selectedWorkspaceType = workspace.normalizeWorkspaceType(e.currentTarget.dataset.workspaceType)
     workspace.setPreferredWorkspaceType(selectedWorkspaceType)
-    this.setData({
-      selectedWorkspaceType,
-      loginPrompt: this.buildLoginPrompt(selectedWorkspaceType)
-    })
+    this.setData({ selectedWorkspaceType, loginPrompt: '已选择：' + workspace.getWorkspaceLabel(selectedWorkspaceType) })
   },
-
-  async checkLoginStatus() {
-    const user = await auth.ensureLoggedIn()
-    if (!user) {
-      this.resetUserState()
-      return null
-    }
-
-    this.setUserState(user)
-    return user
-  },
-
   setUserState(user) {
-    const profileForm = this.buildProfileForm(user)
-    const completed = !!user.profileCompleted || !!(
-      profileForm.realName.trim() &&
-      profileForm.gridAccount.trim() &&
-      profileForm.district.trim() &&
-      profileForm.gridName.trim()
-    )
-    const actualWorkspaceType = workspace.getWorkspaceType(user)
-
-    workspace.setPreferredWorkspaceType(actualWorkspaceType)
-
+    const isEmployee = user.role === 'sales_person'
+    const completed = workspace.isProfileCompleted(user)
     this.setData({
-      userInfo: {
-        nickName: user.nickName || '',
-        avatarUrl: user.avatarUrl || ''
-      },
-      hasUserInfo: true,
-      userRole: user.role || null,
-      workspaceType: actualWorkspaceType,
-      selectedWorkspaceType: actualWorkspaceType,
-      roleText: workspace.getRoleText(user),
-      profileCompleted: completed,
-      showProfileModal: !completed,
-      profileForm,
-      grids: gridOptions.getGridsByDistrict(profileForm.district),
-      profileDisplayName: profileForm.realName || user.nickName || '未命名用户',
-      profileSubtitle: this.buildProfileSubtitle(profileForm),
-      loginPrompt: this.buildLoginPrompt(actualWorkspaceType)
+      userInfo: { nickName: user.nickName || '', avatarUrl: user.avatarUrl || '' },
+      hasUserInfo: true, userRole: user.role, isEmployee, selectedWorkspaceType: workspace.getWorkspaceType(user),
+      roleText: workspace.getRoleText(user), profileCompleted: completed,
+      showProfileModal: isEmployee && !completed, claimed: !!user.salesClaimed,
+      profileDisplayName: user.realName || user.nickName || (isEmployee ? '待认领员工编号' : '管理人员'),
+      profileSubtitle: isEmployee ? [user.employeeId, user.district, user.gridName].filter(Boolean).join(' / ')
+        : user.role === 'district_manager' ? '管理区县：' + (user.salesManagedDistrict || '尚未配置') : '管理范围：全市',
+      profileForm: { employeeId: user.employeeId || '' }
     })
   },
-
-  buildProfileForm(user) {
-    return {
-      realName: user.realName || '',
-      gridAccount: user.gridAccount || '',
-      district: user.district || '',
-      gridName: user.gridName || ''
-    }
-  },
-
-  buildProfileSubtitle(profileForm) {
-    const { district, gridName } = profileForm
-    if (district && gridName) {
-      return `${district} / ${gridName}`
-    }
-    return district || gridName || '请先补充所属网格信息'
-  },
-
-  async showWorkspaceMismatch(actualWorkspaceType) {
-    wx.showToast({
-      title: `当前账号已配置为${workspace.getWorkspaceLabel(actualWorkspaceType)}`,
-      icon: 'none',
-      duration: 1600
-    })
-
-    return new Promise(resolve => {
-      setTimeout(resolve, 500)
-    })
-  },
-
-  async routeByWorkspace(user, options = {}) {
-    const actualWorkspaceType = workspace.getWorkspaceType(user)
-    const selectedWorkspaceType = options.selectedWorkspaceType || this.data.selectedWorkspaceType
-    const shouldTipMismatch = !!options.showMismatchTip && selectedWorkspaceType && selectedWorkspaceType !== actualWorkspaceType
-
-    if (shouldTipMismatch) {
-      await this.showWorkspaceMismatch(actualWorkspaceType)
-    }
-
-    if (!workspace.isLineProjectWorkspace(user)) {
-      return false
-    }
-
-    try {
-      await workspace.relaunchWorkspaceHome(user)
-      return true
-    } catch (error) {
-      console.error('集客线路工作台跳转失败:', error)
-      wx.showToast({
-        title: '工作台跳转失败',
-        icon: 'none'
-      })
-      return false
-    }
-  },
-
-  formatMoney(value) {
-    return Number(value || 0).toFixed(2)
-  },
-
   async onLogin() {
-    if (!this.data.selectedWorkspaceType) {
-      wx.showToast({
-        title: '请先选择工作界面',
-        icon: 'none'
-      })
-      return
-    }
-
+    this.setData({ loading: true })
     try {
-      this.setData({ loading: true })
-      const intendedWorkspaceType = this.data.selectedWorkspaceType
       const result = await auth.login()
-      const user = result.user
-      const hasWorkspaceMismatch = intendedWorkspaceType !== workspace.getWorkspaceType(user)
-      this.setUserState(user)
-
-      if (await this.routeByWorkspace(user, {
-        selectedWorkspaceType: intendedWorkspaceType,
-        showMismatchTip: true
-      })) {
-        return
-      }
-
-      if (user.profileCompleted) {
-        await this.loadUserStats()
-        if (!hasWorkspaceMismatch) {
-          wx.showToast({ title: '登录成功', icon: 'success' })
-        }
-      } else {
-        wx.showToast({ title: '请补充个人信息', icon: 'none' })
-      }
-    } catch (error) {
-      console.error('登录失败:', error)
-      wx.showToast({ title: '登录失败', icon: 'error' })
-    } finally {
-      this.setData({ loading: false })
-    }
+      this.setUserState(result.user)
+      if (workspace.isLineProjectWorkspace(result.user)) await workspace.relaunchWorkspaceHome(result.user)
+      else await this.loadDashboard()
+    } catch (error) { this.error(error) } finally { this.setData({ loading: false }) }
   },
-
   openProfileModal() {
-    if (!this.data.hasUserInfo) {
-      wx.showToast({ title: '请先登录', icon: 'none' })
-      return
-    }
-
-    if (this.data.profileCompleted) {
-      wx.navigateTo({
-        url: '/pages/profile/profile'
-      })
-      return
-    }
-
+    if (!this.data.isEmployee || this.data.claimed) { wx.navigateTo({ url: '/pages/profile/profile' }); return }
     this.setData({ showProfileModal: true })
   },
-
-  closeProfileModal() {
-    if (!this.data.profileCompleted) {
-      wx.showToast({ title: '请先完成个人信息填写', icon: 'none' })
-      return
-    }
-
-    this.setData({ showProfileModal: false })
-  },
-
+  closeProfileModal() { this.setData({ showProfileModal: false }) },
   stopModalPropagation() {},
-
-  onProfileInputChange(e) {
-    const { field } = e.currentTarget.dataset
-    const profileForm = {
-      ...this.data.profileForm,
-      [field]: e.detail.value
-    }
-
-    this.setData({
-      profileForm,
-      profileDisplayName: profileForm.realName || (this.data.userInfo && this.data.userInfo.nickName) || '未命名用户'
-    })
-  },
-
-  onDistrictChange(e) {
-    const district = this.data.districts[Number(e.detail.value)] || ''
-    const grids = gridOptions.getGridsByDistrict(district)
-    const profileForm = {
-      ...this.data.profileForm,
-      district,
-      gridName: ''
-    }
-
-    this.setData({
-      grids,
-      profileForm,
-      profileSubtitle: this.buildProfileSubtitle(profileForm)
-    })
-  },
-
-  onGridChange(e) {
-    const gridName = this.data.grids[Number(e.detail.value)] || ''
-    const profileForm = {
-      ...this.data.profileForm,
-      gridName
-    }
-
-    this.setData({
-      profileForm,
-      profileSubtitle: this.buildProfileSubtitle(profileForm)
-    })
-  },
-
-  validateProfileForm() {
-    const { realName, gridAccount, district, gridName } = this.data.profileForm
-
-    if (!realName.trim()) {
-      wx.showToast({ title: '请输入姓名', icon: 'none' })
-      return false
-    }
-
-    if (!gridAccount.trim()) {
-      wx.showToast({ title: '请输入网格通账号', icon: 'none' })
-      return false
-    }
-
-    if (!district) {
-      wx.showToast({ title: '请选择区县', icon: 'none' })
-      return false
-    }
-
-    if (!gridName) {
-      wx.showToast({ title: '请选择所属网格', icon: 'none' })
-      return false
-    }
-
-    return true
-  },
-
+  onProfileInputChange(e) { this.setData({ 'profileForm.employeeId': e.detail.value }) },
   async submitProfile() {
-    if (!this.validateProfileForm()) {
-      return
-    }
-
+    if (this.data.savingProfile || !this.data.isEmployee) return
+    if (!this.data.profileForm.employeeId.trim()) { this.error(new Error('请输入员工编号')); return }
+    this.setData({ savingProfile: true })
     try {
-      this.setData({ savingProfile: true })
-      const user = await auth.updateProfile(this.data.profileForm)
-      this.setUserState(user)
+      this.setUserState(await auth.updateProfile(this.data.profileForm))
       this.setData({ showProfileModal: false })
-      if (user.lineProjectClaimedRecords > 0) {
-        wx.showToast({ title: `已认领${user.lineProjectClaimedRecords}条`, icon: 'success' })
-      }
-
-      if (await this.routeByWorkspace(user, { selectedWorkspaceType: this.data.selectedWorkspaceType })) {
-        return
-      }
-
-      await this.loadUserStats()
-      wx.showToast({ title: '资料已保存', icon: 'success' })
-    } catch (error) {
-      console.error('保存个人信息失败:', error)
-      const message = error.message || '保存失败'
-      if (message.includes('待认领数据') || message.includes('已认领集客线路数据')) {
-        wx.showModal({ title: '无法自动认领', content: message, showCancel: false })
-      } else {
-        wx.showToast({ title: message, icon: 'none' })
-      }
-    } finally {
-      this.setData({ savingProfile: false })
-    }
+      await this.loadDashboard()
+      wx.showToast({ title: '认领成功', icon: 'success' })
+    } catch (error) { this.error(error) } finally { this.setData({ savingProfile: false }) }
   },
-
-  async loadUserStats() {
+  onMonthChange(e) { this.setData({ monthLabel: e.detail.value }); this.loadDashboard() },
+  async loadDashboard() {
+    const requestId = this.requestId = (this.requestId || 0) + 1
+    const current = () => this.visible && this.requestId === requestId
+    const month = this.data.monthLabel
+    this.setData({ loading: true, errorText: '', receiptWarning: '', participation: null, stats: emptyStats(),
+      canHandleFeedback: false, pendingCount: 0, feedbackError: '' })
     try {
-      const currentUser = await auth.ensureLoggedIn()
-      if (!currentUser || workspace.isLineProjectWorkspace(currentUser)) {
-        return
-      }
-
-      const res = await wx.cloud.callFunction({
-        name: 'businessData',
-        data: {
-          action: 'list',
-          data: {
-            page: 1,
-            pageSize: 100,
-            filters: {},
-            sortBy: 'createTime',
-            sortOrder: 'desc'
-          }
+      const access = await callSales('getAccess')
+      if (!current()) return
+      const isEmployee = access.role === 'sales_person'
+      this.setData({ isEmployee, canImport: access.canImport, canMaintain: access.canMaintain })
+      if (isEmployee) {
+        const result = await callSales('list', { personal: true, referenceMonth: month, receiptMonth: month, pageSize: 1 })
+        const stats = { ...result.stats }
+        for (const key of ['totalCommission', 'monthCommission', 'settledCommission', 'unsettledCommission', 'currentDue']) stats[key] = Number(stats[key] || 0).toFixed(2)
+        const versions = result.versions.filter(item => item.businessMonth === month)
+        await renderSalesData(this, { stats, loading: false,
+          monthStatus: versions.length ? (versions.every(item => item.finalized) ? '已定版' : '更新中') : '暂无数据',
+          cutoffDate: versions.map(item => item.cutoffDate).sort().pop() || '' }, result.receipts || [], current)
+      } else {
+        const result = await callSales('getSummary', { businessMonth: month })
+        if (current()) this.setData({ participation: result.participation, scopeLabel: result.scopeLabel })
+        const response = await wx.cloud.callFunction({ name: 'salaryFeedback', data: {
+          action: 'listPending', data: { workspaceType: 'sales', scene: 'sales_salary' }
+        } })
+        if (!current()) return
+        if (!response.result || !response.result.success) {
+          this.setData({ feedbackError: '反馈处理入口加载失败，请重新进入页面刷新。' }); return
         }
-      })
-
-      if (!res.result || !res.result.success) {
-        throw new Error((res.result && res.result.error) || '统计数据加载失败')
+        this.setData({ canHandleFeedback: response.result.data.canResolve, pendingCount: response.result.data.records.length })
       }
-
-      const resultData = res.result.data || {}
-      const stats = this.resolveUserStats(resultData.stats, resultData.records || [], resultData.total)
-      this.setData({ stats })
     } catch (error) {
-      console.error('加载统计数据失败:', error)
-    }
+      if (current()) this.setData({ errorText: error.message || '加载失败，请刷新重试', monthStatus: '加载失败' })
+    } finally { if (current()) this.setData({ loading: false }) }
   },
-
-  resolveUserStats(remoteStats = {}, records = [], total = 0) {
-    const localStats = commission.calculateStats(records)
-    const stats = remoteStats && Object.keys(remoteStats).length > 0 ? { ...remoteStats } : {}
-    const totalRecords = Number(total || stats.totalRecords || localStats.totalRecords || 0)
-
-    if (localStats.totalRecords > Number(stats.totalRecords || 0)) {
-      stats.totalRecords = totalRecords || localStats.totalRecords
-    } else if (!Number(stats.totalRecords || 0) && totalRecords) {
-      stats.totalRecords = totalRecords
-    }
-
-    if (localStats.totalCommission > Number(stats.totalCommission || 0)) {
-      stats.totalCommission = localStats.totalCommission
-    }
-
-    if (localStats.todayRecords > Number(stats.todayRecords || 0)) {
-      stats.todayRecords = localStats.todayRecords
-      stats.todayCommission = localStats.todayCommission
-    }
-
-    if (localStats.monthRecords > Number(stats.monthRecords || 0)) {
-      stats.monthRecords = localStats.monthRecords
-      stats.monthCommission = localStats.monthCommission
-    }
-
-    return {
-      totalRecords: Number(stats.totalRecords || 0),
-      totalCommission: this.formatMoney(stats.totalCommission),
-      todayRecords: Number(stats.todayRecords || 0),
-      todayCommission: this.formatMoney(stats.todayCommission),
-      monthRecords: Number(stats.monthRecords || 0),
-      monthCommission: this.formatMoney(stats.monthCommission)
-    }
-  },
-
-  getDefaultStats() {
-    return {
-      totalRecords: 0,
-      totalCommission: '0.00',
-      todayRecords: 0,
-      todayCommission: '0.00',
-      monthRecords: 0,
-      monthCommission: '0.00'
-    }
-  },
-
+  navigateToImport() { if (this.data.canImport) wx.navigateTo({ url: '/pages/collect/collect' }) },
+  navigateToMaintenance() { if (this.data.canMaintain) wx.navigateTo({ url: '/pages/collect/collect?mode=maintenance' }) },
   navigateToFeedback() {
-    if (!this.data.hasUserInfo) {
-      wx.showToast({ title: '请先登录', icon: 'none' })
+    if (!this.data.isEmployee) {
+      if (this.data.canHandleFeedback) wx.navigateTo({ url: '/pages/feedback/feedback?workspaceType=sales&mode=handle' })
       return
     }
-
-    if (!workspace.isSalesWorkspace(this.data.workspaceType)) {
-      wx.showToast({ title: '当前账号不可使用酬金反馈', icon: 'none' })
-      return
-    }
-
-    if (!this.data.profileCompleted) {
-      wx.showToast({ title: '请先完善个人信息', icon: 'none' })
-      this.setData({ showProfileModal: true })
-      return
-    }
-
-    wx.navigateTo({
-      url: '/pages/feedback/feedback'
-    })
+    if (!this.data.claimed) { this.setData({ showProfileModal: true }); return }
+    wx.navigateTo({ url: '/pages/feedback/feedback?workspaceType=sales&salaryMonth=' + this.data.monthLabel })
   },
-
-  resetUserState() {
-    const selectedWorkspaceType = workspace.getPreferredWorkspaceType()
-    this.setData({
-      userInfo: null,
-      hasUserInfo: false,
-      userRole: null,
-      workspaceType: workspace.WORKSPACE_TYPES.SALES,
-      selectedWorkspaceType,
-      roleText: '',
-      profileCompleted: false,
-      showProfileModal: false,
-      profileDisplayName: '未命名用户',
-      profileSubtitle: '请先补充所属网格信息',
-      loginPrompt: this.buildLoginPrompt(selectedWorkspaceType),
-      grids: [],
-      profileForm: {
-        realName: '',
-        gridAccount: '',
-        district: '',
-        gridName: ''
-      },
-      stats: this.getDefaultStats()
-    })
-  },
-
   onLogout() {
-    wx.showModal({
-      title: '确认退出',
-      content: '确定要退出登录吗？',
-      success: res => {
-        if (!res.confirm) {
-          return
-        }
-
-        auth.logout()
-        this.resetUserState()
-        wx.showToast({ title: '已退出登录', icon: 'success' })
-      }
-    })
+    wx.showModal({ title: '退出登录', content: '确认退出当前微信账号？', success: res => {
+      if (!res.confirm) return
+      this.requestId = (this.requestId || 0) + 1
+      auth.logout()
+      this.setData({ hasUserInfo: false, userInfo: null, showProfileModal: false, canImport: false,
+        canMaintain: false, participation: null, canHandleFeedback: false, stats: emptyStats() })
+    } })
   }
 })

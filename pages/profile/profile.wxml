@@ -13,6 +13,21 @@
     <view class="card form-card">
       <view class="section-title">个人资料</view>
 
+      <block wx:if="{{isManagement}}">
+        <view class="form-group">姓名：{{profileForm.realName || '尚未配置'}}</view>
+        <view class="form-group">角色：{{roleText}}</view>
+        <view class="form-group">管理范围：{{profileForm.role === 'district_manager' ? (profileForm.salesManagedDistrict || '尚未配置') : '全市'}}</view>
+        <view>管理资料和权限由后台维护，无需认领员工编号。</view>
+      </block>
+      <block wx:elif="{{isSales}}">
+        <view class="form-group">
+          <view class="form-label">员工编号</view>
+          <input class="form-input" placeholder="请输入已导入的员工编号" value="{{profileForm.employeeId}}" disabled="{{claimed}}" data-field="employeeId" bindinput="onInputChange" />
+        </view>
+        <view wx:if="{{claimed}}">{{profileForm.realName}} / {{profileForm.district}} / {{profileForm.gridName}}</view>
+        <view>一次认领后自动关联后续业务量。编号更正请联系销售业务部。</view>
+      </block>
+      <block wx:else>
       <view class="form-group">
         <view class="form-label">姓名</view>
         <input class="form-input" placeholder="请输入姓名" value="{{profileForm.realName}}" data-field="realName" bindinput="onInputChange" />
@@ -37,7 +52,8 @@
         </picker>
       </view>
 
-      <button class="save-btn" bindtap="onSave" loading="{{saving}}">保存修改</button>
+      </block>
+      <button wx:if="{{!isManagement}}" class="save-btn" bindtap="onSave" loading="{{saving}}" disabled="{{isSales && claimed}}">{{isSales ? (claimed ? '已认领' : '认领员工编号') : '保存修改'}}</button>
       <button class="exit-btn" bindtap="backToLogin">返回工作台</button>
     </view>
   </view>

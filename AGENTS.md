@@ -34,7 +34,13 @@
 核心集合：
 
 - `users`：用户、角色、工作台类型、区县、网格、网格通账号。
-- `business_records`：销售业务记录。
+- `business_records`：已退役销售逐笔记录，只用于备份清理。
+- sales_month_records：员工月度累计量及酬金快照。
+- sales_import_batches：销售导入批次与更正记录。
+- sales_active_versions：月份区县有效版本、定版及并发锁。
+- sales_employees：员工编号与微信账号认领绑定。
+- sales_claim_logs：认领更正审计。
+- sales_data_receipts：员工查看月份区县有效版本记录，按当前绑定微信统计参与率。
 - `salary_feedbacks`：销售酬金反馈和集客问题反馈。
 - `feedback_routes`：按区县配置区县经理和基层监督员。
 - `line_project_records`：集客线路项目人员明细。
@@ -69,10 +75,13 @@
 ├── remuneration.md
 ├── cloudfunctions/
 │   ├── businessData/
+│   │   ├── sales-core.js
+│   │   └── SETUP.md
 │   ├── fileUpload/
 │   ├── lineProjectData/
 │   ├── salaryFeedback/
 │   ├── userManagement/
+│   │   └── sales-identity.js
 │   ├── database-config.js
 │   ├── database-init.js
 │   └── test-data-generator.js
@@ -92,14 +101,12 @@
 │   └── profile/
 └── utils/
     ├── auth.js
-    ├── commission.js
-    ├── commission-fixed.js
     ├── export.js
     ├── grid-options.js
     ├── line-project-config.js
     ├── line-project-service.js
     ├── product-config.js
-    ├── storage.js
+    ├── sales-service.js
     └── workspace.js
 ```
 
@@ -269,16 +276,16 @@ Excel 导出调试指南。说明 `businessData.export` 参数、云函数日志
 
 action：
 
-- `login`：根据 `OPENID` 查询或创建用户。新用户默认 `role: sales_person`、`workspaceType: sales`、`profileCompleted: false`。
-- `updateProfile`：保存 `realName`、`gridAccount`、`district`、`gridName`，要求四项完整，并校验 `gridAccount` 唯一。
-- `getUserInfo`：返回当前用户。
-- `getUsersByRole`：仅区县主管和业务部可按角色查询用户。
+- `login`：按唯一 OPENID 查询或创建用户；新用户采用选择的工作台，角色默认 sales_person。
+- `updateProfile`：销售普通员工仅认领 employeeId，管理资料由后台维护；集客保留姓名、网格通账号、区县和网格校验。
+- `getUserInfo`：校验账号有效、唯一；销售员工资料取最新有效业务快照，管理人员不依赖员工认领。
+- 原 `getUsersByRole` 无前端调用且缺少管理范围限制，已关闭。
 - `test`：健康检查。
 
 关键函数：
 
 - `normalizeUser()`：补齐用户字段、归一工作台类型、计算资料完成状态。
-- `isProfileCompleted()`：检查姓名、网格通账号、区县、网格。
+- `isProfileCompleted()`：集客原资料校验；销售员工与管理人员按各自资料规则判断。
 
 #### `cloudfunctions/userManagement/package.json`
 
@@ -290,50 +297,20 @@ action：
 
 #### `cloudfunctions/businessData/index.js`
 
-action：
+销售月度数据服务。仅读取 sales_month_records 和 sales_active_versions，不再读取旧 business_records。
+- getAccess：云端确认指定导入权限。
+- importPreview / importCommit：12列Excel累计量校验、差异预览、月份区县版本替换；月份锁防并发重复计酬。
+- getImportBatches / reopenMonth：批次历史、定版及填写原因后撤销定版。
+- list / getStats / export：按员工编号及角色范围查询、数量统计、分月核算和Excel导出。
+- archiveLegacy：先上传备份，再清理旧销售逐笔记录；不触及用户、反馈和集客。
+- create、batchImport、update、delete 旧接口已关闭。
 
-- `create`：创建单条销售业务记录。
-- `batchImport`：销售业务 Excel 批量导入。
-- `list`：按角色范围和筛选条件分页查询记录。
-- `update`：更新记录。
-- `delete`：删除记录。
-- `getStats`：统计记录。
-- `export`：导出 xlsx/base64 或供 CSV 流程使用的数据。
-- `test`：健康检查。
-
-核心规则：
-
-- 创建记录时，云函数用“发展人员网格通账号”反查 `users`，把业务归属到目标用户，而不是只相信前端提交的人名。
-- 普通销售只能看本人 openid 或本人网格通账号相关记录。
-- 区县主管只能看本区县记录。
-- 业务部可看全部记录。
-- 销售记录写入 `owner`、`submittedBy`、`userId`、`gridAccount`、`developerGridAccount`、`commissionDetails`、`settlementSchedule`、`settlementSummary` 等字段。
-
-关键函数：
-
-- `buildUserRecordCondition()`：构造普通销售可见范围，兼容旧字段。
-- `buildRoleScopeCondition()`：构造角色数据范围。
-- `buildRecordFilterCondition()`：处理日期、区县、业务、状态、发展人员、提交人、酬金区间等筛选。
-- `buildBusinessRecord()`：标准化销售业务记录并计算酬金和分月核算。
-- `batchImportBusinessRecords()`：解析销售导入 Excel，字段为 `办理时间`、`网格通账号`、`发展人员网格通`、`业务名称`、`业务号码`。
-- `exportData()`：生成销售业务 Excel，含 T+1 至 T+5 分月核算列。
+sales-core.js 保存模板解析及月度数量计算；SETUP.md 说明新集合、权限、索引和上线步骤。
+sales-summary.js 负责 getSummary、recordReceipt：复用角色范围汇总8类数量和T+1/T+2；区县主管看本区县接收情况，销售业务部与系统管理员看全市。后台已识别的管理人员不计入员工接收人数。
 
 #### `cloudfunctions/businessData/commission-rules.js`
 
-云端销售酬金规则，是落库时的权威计算源。
-
-导出：
-
-- `calculateCommission()`
-- `getCommissionDetail()`
-- `findProductMatch()`
-- `normalizeCommissionDetails()`
-- `buildSettlementSchedule()`
-- `buildSettlementSummary()`
-- `enrichRecordSettlement()`
-- `getBusinessTypes()`
-
-注意：前端也有 `utils/product-config.js` 和 `utils/commission-fixed.js`，修改酬金时必须同步前后端配置。
+独立云端8类产品单价；getCommissionDetail() 精确匹配并补齐T1—T5，getBusinessTypes() 返回业务名称。与 utils/product-config.js 和 remuneration.md 一致。
 
 #### `cloudfunctions/businessData/package.json`
 
@@ -366,7 +343,7 @@ action：
 
 ### `cloudfunctions/salaryFeedback/`
 
-销售薪酬反馈和集客问题反馈的双审批云函数。
+销售酬金反馈与集客问题工单云函数。两者共用 feedback_routes 的区县经理、监督员姓名与网格通名单；查询待办和答复时均核对当前名单、管理角色及区县，不使用处理人 openid 或旧分配快照授权；人员更替可直接接续未答复工单，openid 仅用于登录、本人反馈归属和实际操作记录。salary_feedbacks 按 district 查询待办，需普通升序索引。sales-context.js 校验员工绑定，取得所选业务月份的金额、归属区县与批次快照。
 
 #### `cloudfunctions/salaryFeedback/index.js`
 
@@ -374,9 +351,11 @@ action：
 
 - `create`：创建反馈。
 - `listMine`：查询当前用户提交的反馈。
-- `listPending`：查询当前用户作为审批人的待审批反馈。
+- `listPending`：查询分配给当前处理人的待答复反馈。
 - `getSceneSummary`：查询当前用户某场景某月份最近反馈，用于集客签字确认判断。
-- `review`：审批通过或驳回。
+- `resolve`：任一指定处理人答复，可附图片。
+- `continueFeedback`：员工继续反馈，重新进入待答复。
+- `confirmResolved`：员工确认解决，关闭工单。
 - `test`：健康检查。
 
 核心规则：
@@ -387,8 +366,8 @@ action：
 - 反馈提交要求用户资料完整、区县已配置、`feedback_routes` 有有效路由。
 - 审批路由中要配置区县经理和基层监督员网格通账号。
 - 提交人与任一审批人不能是同一人。
-- 集客场景下，本月已签字确认后不能再反馈；本月已有 `pending`/`processing` 反馈时不能重复提交。
-- 整体状态：任一驳回为 `rejected`，两者都通过为 `approved`，仅一方通过为 `processing`，都未处理为 `pending`。
+- 集客场景保留已有签字确认限制；可选的月度提交次数限制由原环境变量控制。销售不增加签字确认。
+- 销售与集客共用答复闭环：任一指定处理人答复后等待员工确认；员工可确认解决或继续反馈。事务校验身份、工作台与最新状态，防止并发覆盖。集客名单中的经理、监督员可从集客首页进入指定销售反馈处理，不扩大销售业务查询权限。
 
 #### `cloudfunctions/salaryFeedback/package.json`
 
@@ -511,20 +490,11 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 ### `pages/login/`
 
-销售登录页，也是登录后的销售个人首页。
+销售登录及角色首页。普通员工显示个人酬金、认领和我的反馈；管理人员以员工接收情况替代个人酬金卡片，显示授权导入、维护和指定待办入口。
 
 #### `pages/login/login.js`
 
-核心功能：
-
-- 登录前选择销售工作台或集客线路工作台。
-- 调用 `auth.login()` 完成微信资料授权和云端登录。
-- 根据用户实际 `workspaceType` 决定是否跳转集客首页。
-- 展示销售用户个人信息和当月/今日/累计统计。
-- 资料不完整时弹窗要求补充姓名、网格通账号、区县、网格。
-- 保存资料调用 `auth.updateProfile()`。
-- 销售用户可进入薪酬反馈页。
-- 支持退出登录。
+登录与工作台路由；销售员工只填写 employeeId 完成一次认领，姓名区县网格取导入资料。薪酬卡保留布局，按业务月份展示总酬金，另列当月应核算及版本状态。授权销售业务部人员看到专属导入入口。集客继续原资料体系。
 
 #### `pages/login/login.wxml`
 
@@ -540,61 +510,15 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 ### `pages/collect/`
 
-销售业务采集页。
-
-#### `pages/collect/collect.js`
-
-核心功能：
-
-- 校验登录和销售工作台访问权限。
-- 初始化产品分类和默认业务日期。
-- 读取上次表单并可自动填充。
-- 产品三级联动：大类、子类、具体产品。
-- 实时估算酬金。
-- 图片选择、预览、删除，最多 5 张。
-- 普通提交：上传图片后调用 `businessData.create`。
-- 批量导入：区县主管和业务部可选择 Excel，上传后调用 `businessData.batchImport`。
-- 表单校验包括日期、区县、业务名称、11 位手机号、发展人员网格通账号。
-
-#### `pages/collect/collect.wxml`
-
-包含批量导入卡、业务信息表单、图片上传区、重置和提交按钮。
-
-#### `pages/collect/collect.wxss`
-
-采集页表单、三级联动、图片上传、批量导入结果样式。
-
-#### `pages/collect/collect.json`
-
-引用 `navigation-bar`，标题为“信息收集”。
+销售业务量导入与维护页，已移出公共tabBar。管理月份、截止日期、最终标记、上传预览、自动识别区县、发布和撤销定版；完全重复导入不生成版本。销售业务部或系统管理员须有 salesImport 才可导入。系统管理员另可维护认领、按原因清空未定版区县月份；原数据与绑定保留。日常页面已移除旧数据清理按钮。
 
 ### `pages/manage/`
 
-销售业务数据管理页。
+销售月度业务查询页。按月份、区县、业务、姓名或员工编号筛选，数量统计、分月详情和Excel导出。普通员工仅本人，区县主管仅本区县，销售业务部按管理范围查看。禁止逐笔编辑和删除。
 
-#### `pages/manage/manage.js`
+### `pages/summary/`
 
-核心功能：
-
-- 校验登录和销售工作台访问权限。
-- 调用 `businessData.list` 分页加载业务记录。
-- 本地补充分月核算展示。
-- 统计总记录、今日、累计、已核算、未核算。
-- 支持日期、区县、业务类型、发展人员、酬金范围筛选。
-- 支持记录详情弹窗、图片预览、删除记录。
-- 支持 xlsx 和 csv 导出。
-
-#### `pages/manage/manage.wxml`
-
-统计卡、筛选工具栏、筛选面板、记录列表、空状态、加载更多、导出格式弹窗。
-
-#### `pages/manage/manage.wxss`
-
-管理页渐变背景、统计卡、筛选面板、记录卡、分月核算摘要、导出弹窗样式。
-
-#### `pages/manage/manage.json`
-
-引用 `navigation-bar`，开启下拉刷新和触底加载距离。
+底部“业务汇总”页面。按业务月份展示8类数量、T+1下月预估金额、T+2下下月递延金额；云端限制本人/区县/全市范围。接收情况组件 components/sales-participation 仅在管理首页展示。员工在个人首页、汇总或明细成功查看最新版本后自动记录接收，旧版本或未展示月份不计入。
 
 ### `pages/feedback/`
 
@@ -608,9 +532,9 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 - 销售场景加载 `businessData.list` 的月度酬金统计。
 - 集客场景加载 `lineProjectData.getMyOverview` 的本人月度酬金。
 - 调用 `salaryFeedback.listMine` 查询个人反馈历史。
-- 调用 `salaryFeedback.listPending` 查询待审批反馈。
+- 调用 `salaryFeedback.listPending` 查询指定待答复反馈。
 - 调用 `salaryFeedback.create` 提交反馈。
-- 调用 `salaryFeedback.review` 审批通过或驳回。
+- 调用 `salaryFeedback.resolve` 答复，`continueFeedback` 继续反馈，`confirmResolved` 由员工确认解决；销售和集客复用对话、图片附件界面。
 
 #### `pages/feedback/feedback.wxml`
 
@@ -630,7 +554,7 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 #### `pages/profile/profile.js`
 
-加载当前登录用户资料，展示头像、昵称、角色，允许修改姓名、网格通账号、区县、所属网格。保存调用 `auth.updateProfile()`，成功后返回上一页或工作台。
+按工作台展示资料：销售填写员工编号认领，已认领编号只读；集客保留原网格通账号与资料维护。
 
 #### `pages/profile/profile.wxml`
 
@@ -810,79 +734,13 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 登录页和资料页用它驱动 picker。
 
-### `utils/storage.js`
-
-销售采集表单本地缓存工具。
-
-提供：
-
-- `saveLastFormData(formData)`
-- `getLastFormData()`：30 天过期。
-- `saveRecentSelection(type, value)`：每类最多 10 个。
-- `getRecentSelections(type)`
-- `clearAllData()`
-- `getStorageStats()`
-
 ### `utils/product-config.js`
 
-前端销售产品三级配置。
-
-结构：
-
-`产品大类 -> 产品小类 -> 产品资费名称 -> { commission, equivalentIncome }`
-
-导出：
-
-- `PRODUCT_CONFIG`
-- `getProductCategories()`
-- `getProductSubcategories(category)`
-- `getProductItems(category, subcategory)`
-- `calculateProductCommission(category, subcategory, item)`
-- `searchProducts(searchName)`
-- `getCategories()`
-- `getSubcategories(category)`
-- `getProducts(category, subcategory)`
-- `searchProduct(searchName)`
-
-主要服务 `pages/collect/collect.js` 的三级联动和前端估算。
-
-### `utils/commission.js`
-
-旧版通用酬金工具。提供记录统计、简单比例酬金计算、金额格式化、按角色获取比例配置。当前主业务更多使用 `commission-fixed.js`。
-
-### `utils/commission-fixed.js`
-
-前端销售酬金与分月核算工具。
-
-核心功能：
-
-- 按业务名称模糊匹配产品。
-- 计算业务总酬金。
-- 获取业务酬金明细。
-- 统计记录数和酬金。
-- 生成 T+1 到 T+5 分月核算进度。
-- 汇总已核算和未核算金额。
-- 给记录补充 `settlementSchedule`、`settlementSummary`、`settledTotal`、`unsettledTotal`。
-
-销售登录页和管理页都依赖它。
+8类产品平铺配置；PRODUCT_CONFIG 保存单笔分月酬金，getProducts() 返回列表。已取消三级产品选择。
 
 ### `utils/export.js`
 
-销售数据导出工具。
-
-提供：
-
-- `exportToCSV()`
-- `downloadCSV()`
-- `exportToExcel()`
-- `saveExcelFile()`
-- `getExportColumns()`
-- `filterDataByRole()`
-- `generateFilename()`
-- `checkExportPermission()`
-- `exportBusinessData()`
-
-xlsx 主流程：前端调用 `businessData.export` 获取 base64，再保存到小程序用户目录并打开。
+销售与集客共用 saveExcelFile(base64, filename)，保存并打开Excel。旧销售CSV和逐笔导出、前端权限过滤已删除。
 
 ### `utils/line-project-config.js`
 
@@ -933,6 +791,8 @@ SVG 资源目录。当前 `app.json` 的 tabBar 未引用这些图标。
 
 ### 登录与资料
 
+销售工作台通过 userManagement/sales-identity.js 认领员工编号，独立 sales_employees 绑定在覆盖月份数据后仍保留。集客继续下面的网格通资料流程。
+
 路径：
 
 `pages/login/login.js` -> `utils/auth.js` -> `cloudfunctions/userManagement/index.js` -> `app.js`
@@ -941,27 +801,15 @@ SVG 资源目录。当前 `app.json` 的 tabBar 未引用这些图标。
 
 ### 销售业务提交
 
-路径：
-
-`pages/collect/collect.js` -> `cloudfunctions/businessData/index.js` -> `cloudfunctions/businessData/commission-rules.js`
-
-前端负责表单、图片上传和估算；云端负责用户匹配、权限、权威酬金、分月核算和落库。
+已取消手动逐笔提交。指定销售业务部人员通过月度Excel累计表导入。
 
 ### 销售业务管理和导出
 
-路径：
-
-`pages/manage/manage.js` -> `utils/export.js` -> `cloudfunctions/businessData/index.js`
-
-云端按角色限制范围。xlsx 导出由云函数生成 base64，前端保存并打开。
+pages/manage/manage.js → utils/sales-service.js → cloudfunctions/businessData/index.js。云端以 employeeId、角色范围及有效批次确定可见记录。
 
 ### 销售批量导入
 
-路径：
-
-`pages/collect/collect.js` -> 云存储 -> `cloudfunctions/businessData/index.js`
-
-模板字段：`办理时间`、`网格通账号`、`发展人员网格通`、`业务名称`、`业务号码`。
+pages/collect/collect.js → 云存储 → businessData.importPreview / importCommit → sales-core.js。表头为区县、网格名称、装维人员姓名、员工编号和8类业务数量；上传时选择业务月份、截止日期和是否定版。云端根据Excel行自动识别覆盖区县，前端不再手动选择区县。
 
 ### 集客导入
 
@@ -985,16 +833,16 @@ SVG 资源目录。当前 `app.json` 的 tabBar 未引用这些图标。
 
 `pages/feedback/feedback.js` -> `cloudfunctions/salaryFeedback/index.js` -> `feedback_routes`
 
-反馈需要区县配置审批路由。区县经理和基层监督员双审批决定最终状态。
+销售反馈按所选业务月份的归属区县，复用集客经理、监督员的姓名及网格通名单，由云端匹配处理人；任一处理人答复后由员工确认解决或继续反馈。经理管理区县与员工个人区县分开。
 
 ## 常见修改入口
 
 ### 调整销售产品或酬金
 
-- 前端选择和估算：`utils/product-config.js`
-- 前端分月核算展示：`utils/commission-fixed.js`
-- 云端权威落库：`cloudfunctions/businessData/commission-rules.js`
-- 业务资料依据：`remuneration.md`
+- 前端配置：utils/product-config.js
+- 云端单价：cloudfunctions/businessData/commission-rules.js
+- 数量计算及核算：cloudfunctions/businessData/sales-core.js
+- 依据：remuneration.md
 
 ### 调整区县和网格
 

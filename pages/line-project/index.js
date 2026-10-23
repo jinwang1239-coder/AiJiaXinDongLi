@@ -373,6 +373,7 @@ Page({
     canViewSalarySummary: false,
     canViewManagedFeedbacks: false,
     canResolveFeedback: false,
+    canHandleSalesFeedback: false,
     canUploadEvidence: false,
     canViewEvidence: false,
     canViewAllEvidence: false,
@@ -512,7 +513,22 @@ Page({
         managementScopeText: canImport ? '数据范围：全部区县' : `数据范围：${user.district || '授权区县'}`
       })
     }
+    await this.loadSalesFeedbackAccess(user)
     return user
+  },
+
+  async loadSalesFeedbackAccess(user) {
+    this.setData({ canHandleSalesFeedback: false })
+    if (!['district_manager', 'sales_department', 'system_admin'].includes(user.role) &&
+      !(user.lineProjectRoles || []).some(role => ['district_manager', 'district_supervisor'].includes(role))) return
+    try {
+      const result = await wx.cloud.callFunction({
+        name: 'salaryFeedback', data: { action: 'listPending', data: { workspaceType: 'sales' } }
+      })
+      this.setData({ canHandleSalesFeedback: !!(result.result && result.result.success && result.result.data.canResolve) })
+    } catch (error) {
+      console.error('读取销售反馈处理权限失败:', error)
+    }
   },
 
   updateIdentityDisplay(user = {}, access = null) {
@@ -832,6 +848,10 @@ Page({
         mode: 'handle'
       })}`
     })
+  },
+
+  navigateToSalesFeedbackHandling() {
+    wx.navigateTo({ url: '/pages/feedback/feedback?workspaceType=sales&mode=handle' })
   },
 
   navigateToImport() {

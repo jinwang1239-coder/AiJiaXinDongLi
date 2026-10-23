@@ -1,1101 +1,327 @@
-// 云函数入口文件
 const cloud = require('wx-server-sdk')
-const commissionRules = require('./commission-rules')
-
-// 初始化 cloud
-cloud.init({
-  env: cloud.DYNAMIC_CURRENT_ENV
-})
-
-const db = cloud.database()
-const _ = db.command
-const SYSTEM_ADMIN_ROLE = 'system_admin'
-const IMPORT_TEMPLATE_HEADERS = ['办理时间', '网格通账号', '发展人员网格通', '业务名称', '业务号码']
-const MAX_QUERY_LIMIT = 100
-
-function isSystemAdmin(user = {}) {
-  return user.role === SYSTEM_ADMIN_ROLE
+const crypto = require('crypto')
+const core = require('./sales-core')
+const API_VERSION = 'sales-monthly-v2'
+cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
+const db = cloud.database(), _ = db.command
+const C = { records: 'sales_month_records', batches: 'sales_import_batches', versions: 'sales_active_versions', receipts: 'sales_data_receipts' }
+async function all(query) {
+  const rows = []
+  for (let skip = 0; ; skip += 100) {
+    const result = await query.skip(skip).limit(100).get()
+    rows.push(...result.data)
+    if (result.data.length < 100) return rows
+  }
 }
-
-function toNumber(value) {
-  const number = Number(value || 0)
-  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0
+async function optionalDoc(collection, id, source = db) {
+  try { return (await source.collection(collection).doc(id).get()).data || null } catch (error) {
+    if (/document.*(?:not exist|not found)|DATABASE_DOCUMENT_NOT_EXIST|DOCUMENT_NOT_FOUND/i.test(String(error.message))) return null
+    throw error
+  }
 }
-
-function buildUserRecordCondition(user, openid) {
-  const conditions = []
-
-  if (user && user.gridAccount) {
-    conditions.push({ gridAccount: user.gridAccount })
-    conditions.push({ 'owner.gridAccount': user.gridAccount })
-    conditions.push({ developerGridAccount: user.gridAccount })
-    // 兼容旧数据：早期 developer 字段曾保存网格通账号。
-    conditions.push({ developer: user.gridAccount })
-  }
-
-  if (openid) {
-    conditions.push({ userId: openid })
-    conditions.push({ 'owner.openid': openid })
-  }
-
-  if (conditions.length === 1) {
-    return conditions[0]
-  }
-
-  return conditions.length > 0 ? _.or(conditions) : { _id: '__no_user_identity__' }
+const versionId = (month, district) => core.hash(month + '|' + district)
+const summary = require('./sales-summary')(db, { all, optionalDoc, activeRows, versionId })
+async function currentUser() {
+  const { OPENID } = cloud.getWXContext()
+  const result = await db.collection('users').where({ openid: OPENID }).limit(2).get()
+  const user = result.data[0]
+  if (result.data.length !== 1 || !user || user.status === 'inactive' ||
+      (user.role !== 'system_admin' && (user.workspaceType !== 'sales' ||
+      !['sales_person', 'district_manager', 'sales_department'].includes(user.role)))) throw new Error('当前账号不可访问销售工作台')
+  return user
 }
-
-function getInputGridAccount(data = {}) {
-  return String(data.gridAccount || data.developerGridAccount || data.developer || '').trim()
+function requireImporter(user) {
+  if (!core.canImport(user)) throw new Error('仅指定销售业务部管理人员可导入和定版')
 }
-
-function getDeveloperDisplayName(input = {}, targetUser = {}) {
-  const inputName = String(input.developerName || input.developerDisplayName || '').trim()
-  if (inputName) {
-    return inputName
-  }
-
-  const rawDeveloper = String(input.developer || '').trim()
-  if (rawDeveloper && rawDeveloper !== targetUser.gridAccount) {
-    return rawDeveloper
-  }
-
-  return String(targetUser.realName || targetUser.nickName || targetUser.gridAccount || '').trim()
-}
-
-function combineConditions(conditions) {
-  const validConditions = conditions.filter(Boolean)
-  if (validConditions.length === 0) {
-    return null
-  }
-  if (validConditions.length === 1) {
-    return validConditions[0]
-  }
-  return _.and(validConditions)
-}
-
-function buildRoleScopeCondition(user, openid) {
-  if (!user) {
-    return { _id: '__no_user_identity__' }
-  }
-
-  if (user.role === 'sales_person') {
-    return buildUserRecordCondition(user, openid)
-  }
-
-  if (user.role === 'district_manager') {
-    return user.district ? { district: user.district } : { _id: '__no_district_scope__' }
-  }
-
-  return null
-}
-
-function buildRecordFilterCondition(filters = {}) {
+async function versionsFor(user, businessMonth = '') {
+  let query = db.collection(C.versions)
   const condition = {}
-  const conditions = []
-
-  if (filters.startDate && filters.endDate) {
-    condition.date = _.gte(new Date(filters.startDate)).and(_.lte(new Date(filters.endDate)))
-  } else if (filters.startDate) {
-    condition.date = _.gte(new Date(filters.startDate))
-  } else if (filters.endDate) {
-    condition.date = _.lte(new Date(filters.endDate))
+  if (businessMonth) condition.businessMonth = businessMonth
+  if (user.role === 'district_manager') {
+    if (!core.DISTRICTS.includes(user.salesManagedDistrict)) throw new Error('尚未配置有效管理区县，请联系系统管理员')
+    condition.district = user.salesManagedDistrict
   }
-
-  if (filters.createTimeStart && filters.createTimeEnd) {
-    condition.createTime = _.gte(new Date(filters.createTimeStart)).and(_.lte(new Date(filters.createTimeEnd)))
-  } else if (filters.createTimeStart) {
-    condition.createTime = _.gte(new Date(filters.createTimeStart))
-  } else if (filters.createTimeEnd) {
-    condition.createTime = _.lte(new Date(filters.createTimeEnd))
-  }
-
-  if (filters.district) {
-    condition.district = filters.district
-  }
-
-  if (filters.businessType) {
-    condition.businessType = filters.businessType
-  }
-
-  if (filters.businessName) {
-    condition.businessName = filters.businessName
-  }
-
-  if (filters.status) {
-    condition.status = filters.status
-  }
-
-  const developer = String(filters.developer || '').trim()
-  if (developer) {
-    conditions.push(_.or([
-      { developer },
-      { developerGridAccount: developer },
-      { gridAccount: developer },
-      { 'owner.name': developer },
-      { 'owner.gridAccount': developer }
-    ]))
-  }
-
-  if (filters.submitterName) {
-    condition['submittedBy.name'] = db.RegExp({
-      regexp: filters.submitterName,
-      options: 'i'
-    })
-  }
-
-  const hasCommissionMin = filters.commissionMin !== undefined && filters.commissionMin !== ''
-  const hasCommissionMax = filters.commissionMax !== undefined && filters.commissionMax !== ''
-  if (hasCommissionMin || hasCommissionMax) {
-    const min = hasCommissionMin ? Number(filters.commissionMin) : null
-    const max = hasCommissionMax ? Number(filters.commissionMax) : null
-    if (min !== null && max !== null) {
-      condition.commission = _.gte(min).and(_.lte(max))
-    } else if (min !== null) {
-      condition.commission = _.gte(min)
-    } else if (max !== null) {
-      condition.commission = _.lte(max)
-    }
-  }
-
-  if (Object.keys(condition).length > 0) {
-    conditions.unshift(condition)
-  }
-
-  return combineConditions(conditions)
+  if (Object.keys(condition).length) query = query.where(condition)
+  return (await all(query)).filter(version => version.activeBatchId)
 }
-
-function buildScopedRecordQuery(user, openid, filters = {}) {
-  let query = db.collection('business_records')
-  const queryCondition = combineConditions([
-    buildRoleScopeCondition(user, openid),
-    buildRecordFilterCondition(filters)
-  ])
-
-  if (queryCondition) {
-    query = query.where(queryCondition)
+async function activeRows(user, personal = false, businessMonth = '') {
+  if (personal && user.role !== 'sales_person') return { versions: [], rows: [] }
+  const own = personal || user.role === 'sales_person'
+  if (own) {
+    if (!user.employeeId) return { versions: [], rows: [] }
+    const binding = await optionalDoc('sales_employees', core.hash(user.employeeId))
+    if (!binding || binding.userOpenid !== user.openid) return { versions: [], rows: [] }
   }
-
-  return query
-}
-
-async function fetchAllRecords(query) {
-  const records = []
-  let offset = 0
-
-  while (true) {
-    const result = await query.skip(offset).limit(MAX_QUERY_LIMIT).get()
-    const data = result.data || []
-    records.push(...data)
-
-    if (data.length < MAX_QUERY_LIMIT) {
-      break
-    }
-
-    offset += MAX_QUERY_LIMIT
+  const versions = await versionsFor(user, businessMonth), rows = []
+  const ids = [...new Set(versions.map(item => item.activeBatchId).filter(Boolean))]
+  for (let offset = 0; offset < ids.length; offset += 20) {
+    const condition = { importBatchId: _.in(ids.slice(offset, offset + 20)) }
+    if (own) condition.employeeId = user.employeeId
+    if (user.role === 'district_manager') condition.district = user.salesManagedDistrict
+    rows.push(...await all(db.collection(C.records).where(condition)))
   }
-
-  return records
+  return { versions, rows: rows.filter(row => versions.some(version => version.activeBatchId === row.importBatchId &&
+    version.businessMonth === row.businessMonth && version.district === row.district)) }
 }
-
-function getRecordStats(records = []) {
-  const now = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const stats = {
-    totalRecords: 0,
-    totalCommission: 0,
-    todayRecords: 0,
-    todayCommission: 0,
-    monthRecords: 0,
-    monthCommission: 0,
-    settledCommission: 0,
-    unsettledCommission: 0,
-    statusCounts: {
-      pending: 0,
-      approved: 0,
-      rejected: 0
-    },
-    businessTypeCounts: {}
-  }
-
-  records.forEach(rawRecord => {
-    const record = commissionRules.enrichRecordSettlement(rawRecord)
-    const recordDate = new Date(record.date || record.businessDate || record.handleTime || record.createTime || record.timestamp)
-    const commission = toNumber(record.commission)
-
-    stats.totalRecords += 1
-    stats.totalCommission += commission
-    stats.settledCommission += toNumber(record.settledTotal)
-    stats.unsettledCommission += toNumber(record.unsettledTotal)
-
-    if (!Number.isNaN(recordDate.getTime())) {
-      if (recordDate >= todayStart) {
-        stats.todayRecords += 1
-        stats.todayCommission += commission
-      }
-      if (recordDate >= monthStart) {
-        stats.monthRecords += 1
-        stats.monthCommission += commission
-      }
-    }
-
-    stats.statusCounts[record.status] = (stats.statusCounts[record.status] || 0) + 1
-    const businessKey = record.businessName || record.businessType || '未分类'
-    stats.businessTypeCounts[businessKey] = (stats.businessTypeCounts[businessKey] || 0) + 1
-  })
-
-  stats.totalCommission = toNumber(stats.totalCommission)
-  stats.todayCommission = toNumber(stats.todayCommission)
-  stats.monthCommission = toNumber(stats.monthCommission)
-  stats.settledCommission = toNumber(stats.settledCommission)
-  stats.unsettledCommission = toNumber(stats.unsettledCommission)
-
-  return stats
+function filterRecords(records, filters = {}) {
+  return records.filter(item => (
+    (!filters.businessMonth || item.businessMonth === filters.businessMonth) &&
+    (!filters.startDate || item.date >= filters.startDate) &&
+    (!filters.endDate || item.date <= filters.endDate) &&
+    (!filters.district || item.district === filters.district) &&
+    (!filters.businessName || item.businessName === filters.businessName) &&
+    (!filters.employeeId || item.employeeId === core.employeeId(filters.employeeId)) &&
+    (!filters.developer || item.developer.includes(String(filters.developer).trim()) ||
+      item.employeeId.includes(core.employeeId(filters.developer))) &&
+    (filters.commissionMin === '' || filters.commissionMin === undefined || item.commission >= Number(filters.commissionMin)) &&
+    (filters.commissionMax === '' || filters.commissionMax === undefined || item.commission <= Number(filters.commissionMax))
+  ))
 }
-
-function buildFilterOptions(records = []) {
+async function list(user, data = {}) {
+  const active = await activeRows(user, data.personal === true, data.filters && data.filters.businessMonth)
+  const referenceMonth = data.referenceMonth || core.monthNow()
+  if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(referenceMonth)) throw new Error('核发月份无效')
+  const records = filterRecords(core.flatten(active.rows, active.versions, referenceMonth), data.filters)
+    .sort((a, b) => b.businessMonth.localeCompare(a.businessMonth) || a.employeeId.localeCompare(b.employeeId))
+  const page = Math.max(1, Number(data.page) || 1), pageSize = Math.min(100, Math.max(1, Number(data.pageSize) || 20))
+  const shownRecords = records.slice((page - 1) * pageSize, page * pageSize)
+  const filters = data.filters || {}
+  const visibleVersions = active.versions.filter(version => active.rows.some(row =>
+    row.importBatchId === version.activeBatchId && row.district === version.district) && (!filters.district || filters.district === version.district))
+  const receiptVersions = visibleVersions.filter(version => data.receiptMonth ? version.businessMonth === data.receiptMonth :
+    shownRecords.some(row => row.businessMonth === version.businessMonth && row.district === version.district) ||
+    page === 1 && !records.length && !filters.businessName && !filters.developer && !filters.employeeId)
   return {
-    districts: [...new Set(records.map(record => record.district))].filter(Boolean),
-    developers: [...new Set(records.map(record => record.developer || record.developerGridAccount || record.gridAccount))].filter(Boolean)
+    records: shownRecords, total: records.length,
+    stats: core.stats(records, referenceMonth), referenceMonth,
+    receipts: user.role === 'sales_person' ? receiptVersions
+      .map(({ businessMonth, district, activeBatchId }) => ({ businessMonth, district, activeBatchId })) : [],
+    versions: visibleVersions
+      .map(({ businessMonth, district, cutoffDate, finalized }) => ({ businessMonth, district, cutoffDate, finalized })),
+    filterOptions: { districts: [...new Set(active.rows.map(item => item.district))], businessTypes: core.PRODUCT_NAMES }
   }
 }
-
-function isUserRecordOwner(record, user) {
-  if (!record || !user) {
-    return false
-  }
-
-  const gridAccount = user.gridAccount || ''
-  if (gridAccount && (
-    record.gridAccount === gridAccount ||
-    record.developerGridAccount === gridAccount ||
-    record.developer === gridAccount ||
-    (record.owner && record.owner.gridAccount === gridAccount)
-  )) {
-    return true
-  }
-
-  if (user.openid && (
-    record.userId === user.openid ||
-    (record.owner && record.owner.openid === user.openid)
-  )) {
-    return true
-  }
-
-  const hasOwnerIdentity = record.userId || record.gridAccount || record.developerGridAccount || record.owner
-  return !hasOwnerIdentity && record.submittedBy && record.submittedBy.openid === user.openid
-}
-
-// 云函数入口函数
-exports.main = async (event, context) => {
-  const wxContext = cloud.getWXContext()
-  const { action, data } = event
-  try {
-    switch (action) {
-      case 'create':
-        return await createBusinessRecord(wxContext, data)
-      case 'batchImport':
-        return await batchImportBusinessRecords(wxContext, data)
-      case 'list':
-        return await getBusinessRecords(wxContext, data)
-      case 'update':
-        return await updateBusinessRecord(wxContext, data)
-      case 'delete':
-        return await deleteBusinessRecord(wxContext, data)
-      case 'getStats':
-        return await getStatistics(wxContext, data)
-      case 'export':
-        return await exportData(wxContext, event)  // 直接传递整个 event 对象
-      case 'test':
-        return { success: true, message: 'businessData 云函数正常运行' }
-      default:
-        return {
-          success: false,
-          error: '未知操作'
-        }
-    }
-  } catch (error) {
-    console.error('云函数执行错误:', error)
-    return {
-      success: false,
-      error: error.message
-    }
-  }
-}
-
-// 创建业务记录
-async function createBusinessRecord(wxContext, data) {
-  const openid = wxContext.OPENID
-
-  // 获取用户信息
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-
-  const user = userQuery.data[0]
-  const gridAccount = getInputGridAccount(data)
-
-  if (!gridAccount) {
-    return {
-      success: false,
-      error: '请输入发展人员网格通账号'
-    }
-  }
-
-  const targetUserQuery = await db.collection('users').where({
-    gridAccount
-  }).limit(2).get()
-
-  if (targetUserQuery.data.length === 0) {
-    return {
-      success: false,
-      error: `未找到网格通账号“${gridAccount}”对应用户`
-    }
-  }
-
-  if (targetUserQuery.data.length > 1) {
-    return {
-      success: false,
-      error: `网格通账号“${gridAccount}”匹配到多个用户，请联系管理员处理`
-    }
-  }
-
-  const targetUser = targetUserQuery.data[0]
-  const recordInput = {
-    ...(data || {}),
-    gridAccount: targetUser.gridAccount,
-    developerGridAccount: targetUser.gridAccount
-  }
-
-  if (!commissionRules.getCommissionDetail(recordInput.businessName)) {
-    return {
-      success: false,
-      error: '业务名称不在当前酬金配置中，请重新选择'
-    }
-  }
-
-  const record = buildBusinessRecord(recordInput, targetUser, user, {
-    source: data && data.source ? data.source : 'form'
-  })
-
-  const result = await db.collection('business_records').add({
-    data: record
-  })
-
-  return {
-    success: true,
-    data: {
-      recordId: result._id,
-      record: record
-    }
-  }
-}
-
-function buildUserSnapshot(user) {
-  if (!user) {
-    return {
-      openid: '',
-      userId: '',
-      name: '',
-      nickName: '',
-      realName: '',
-      role: '',
-      district: '',
-      gridName: '',
-      gridAccount: ''
-    }
-  }
-
-  return {
-    openid: user.openid,
-    userId: user._id,
-    name: user.realName || user.nickName || '',
-    nickName: user.nickName || '',
-    realName: user.realName || '',
-    role: user.role || '',
-    district: user.district || '',
-    gridName: user.gridName || '',
-    gridAccount: user.gridAccount || ''
-  }
-}
-
-function parseBusinessDate(dateInput) {
-  if (dateInput instanceof Date) {
-    return Number.isNaN(dateInput.getTime()) ? null : dateInput
-  }
-
-  if (typeof dateInput === 'number') {
-    const XLSX = require('xlsx')
-    const parsed = XLSX.SSF.parse_date_code(dateInput)
-    if (parsed) {
-      return new Date(parsed.y, parsed.m - 1, parsed.d)
-    }
-  }
-
-  if (typeof dateInput === 'string') {
-    const normalized = dateInput
-      .replace(/年/g, '-')
-      .replace(/月/g, '-')
-      .replace(/日/g, '')
-      .replace(/\//g, '-')
-      .replace(/\./g, '-')
-      .trim()
-    const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
-    if (match) {
-      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
-    }
-  }
-
-  if (dateInput) {
-    const date = new Date(dateInput)
-    if (!Number.isNaN(date.getTime())) {
-      return date
-    }
-  }
-
-  return null
-}
-
-function buildBusinessRecord(input = {}, targetUser, operatorUser, options = {}) {
-  const now = new Date()
-  const businessDate = parseBusinessDate(input.date || input.businessDate || input.handleTime) || now
-  const rawBusinessName = String(input.businessName || '').trim()
-  const productDetail = commissionRules.getCommissionDetail(rawBusinessName)
-  const commissionDetails = productDetail
-    ? productDetail.commission
-    : commissionRules.normalizeCommissionDetails(input.commissionDetails || { total: input.commission || 0 })
-  const settlementSchedule = commissionRules.buildSettlementSchedule(commissionDetails, businessDate, now)
-  const settlementSummary = commissionRules.buildSettlementSummary(settlementSchedule)
-  const businessNumber = String(input.businessNumber || input.userPhone || '').trim()
-  const owner = buildUserSnapshot(targetUser)
-  const submitter = buildUserSnapshot(operatorUser || targetUser)
-  const record = {
-    userId: targetUser.openid,
-    date: businessDate,
-    district: targetUser.district || input.district || '',
-    gridName: targetUser.gridName || input.gridName || '',
-    gridAccount: targetUser.gridAccount || input.gridAccount || '',
-    businessName: productDetail ? productDetail.businessName : rawBusinessName,
-    rawBusinessName,
-    businessNumber,
-    userPhone: businessNumber,
-    developer: getDeveloperDisplayName(input, targetUser),
-    developerGridAccount: targetUser.gridAccount || input.developerGridAccount || input.gridAccount || '',
-    attachments: Array.isArray(input.attachments) ? input.attachments : [],
-    commission: commissionDetails.total,
-    commissionDetails,
-    settlementSchedule,
-    settlementSummary,
-    settledTotal: settlementSummary.settledTotal,
-    unsettledTotal: settlementSummary.unsettledTotal,
-    category: productDetail ? productDetail.category : (input.category || ''),
-    subcategory: productDetail ? productDetail.subcategory : (input.subcategory || ''),
-    equivalentIncome: productDetail ? productDetail.equivalentIncome : (input.equivalentIncome || 0),
-    source: options.source || input.source || 'form',
-    status: input.status || 'approved',
-    owner,
-    submittedBy: submitter,
-    createTime: now,
-    updateTime: now
-  }
-
-  if (options.importId) {
-    record.importId = options.importId
-  }
-
-  if (options.fileName) {
-    record.importFileName = options.fileName
-  }
-
-  if (operatorUser && operatorUser.openid !== targetUser.openid) {
-    record.importedBy = buildUserSnapshot(operatorUser)
-  }
-
-  return record
-}
-
-function normalizeImportRow(row, rowNumber) {
-  const normalized = {}
-  Object.keys(row || {}).forEach(key => {
-    normalized[String(key).trim()] = row[key]
-  })
-
-  return {
-    rowNumber,
-    handleTime: normalized['办理时间'],
-    gridAccount: String(normalized['网格通账号'] || '').trim(),
-    developer: String(normalized['发展人员网格通'] || normalized['办理人员'] || '').trim(),
-    businessName: String(normalized['业务名称'] || '').trim(),
-    businessNumber: String(normalized['业务号码'] || '').trim()
-  }
-}
-
-function getWorksheetHeaders(worksheet, XLSX) {
-  if (!worksheet || !worksheet['!ref']) {
-    return []
-  }
-
-  const range = XLSX.utils.decode_range(worksheet['!ref'])
-  const headers = []
-
-  for (let col = range.s.c; col <= range.e.c; col++) {
-    const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: col })
-    const cell = worksheet[cellAddress]
-    if (cell && cell.v !== undefined) {
-      headers.push(String(cell.v).trim())
-    }
-  }
-
-  return headers
-}
-
-function chunkArray(items, size) {
-  const chunks = []
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size))
-  }
-  return chunks
-}
-
-async function getUsersByGridAccounts(gridAccounts) {
-  const uniqueAccounts = [...new Set(gridAccounts.filter(Boolean))]
-  const userMap = {}
-
-  for (const chunk of chunkArray(uniqueAccounts, 20)) {
-    const result = await db.collection('users').where({
-      gridAccount: _.in(chunk)
-    }).get()
-
-    result.data.forEach(user => {
-      if (!userMap[user.gridAccount]) {
-        userMap[user.gridAccount] = []
-      }
-      userMap[user.gridAccount].push(user)
-    })
-  }
-
-  return userMap
-}
-
-async function batchImportBusinessRecords(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const { fileID, fileName = '' } = data
-
-  if (!fileID) {
-    return {
-      success: false,
-      error: '请先上传Excel文件'
-    }
-  }
-
-  const userQuery = await db.collection('users').where({ openid }).get()
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-
-  const importer = userQuery.data[0]
-  if (!['district_manager', 'sales_department'].includes(importer.role) && !isSystemAdmin(importer)) {
-    return {
-      success: false,
-      error: '仅区县主管或销售业务部可批量导入'
-    }
-  }
-
-  if (importer.role === 'district_manager' && !importer.district) {
-    return {
-      success: false,
-      error: '当前区县主管未配置区县，无法导入'
-    }
-  }
-
+async function prepare(user, data) {
+  requireImporter(user)
+  if (!data.fileID) throw new Error('请先上传Excel')
+  const downloaded = await cloud.downloadFile({ fileID: data.fileID })
+  if (downloaded.fileContent.length > 10 * 1024 * 1024) throw new Error('文件不能超过10MB')
   const XLSX = require('xlsx')
-  const downloadResult = await cloud.downloadFile({ fileID })
-  const workbook = XLSX.read(downloadResult.fileContent, {
-    type: 'buffer',
-    cellDates: true
+  const parsed = core.parseWorkbook(XLSX.read(downloaded.fileContent, { type: 'buffer' }), XLSX, data)
+  const monthLockId = core.hash('month|' + parsed.meta.businessMonth)
+  const [monthLock, versions, existing] = await Promise.all([
+    optionalDoc(C.versions, monthLockId),
+    Promise.all(parsed.meta.districts.map(async district => {
+      const version = await optionalDoc(C.versions, versionId(parsed.meta.businessMonth, district))
+      if (version && version.finalized) throw new Error(district + '该月已定版，请先撤销定版')
+      if (version && parsed.meta.cutoffDate < version.cutoffDate) throw new Error(district + '统计截止日期早于当前版本')
+      const ruleVersion = version && (version.ruleVersion || (await optionalDoc(C.batches, version.activeBatchId) || {}).ruleVersion)
+      return { district, previous: version ? version.activeBatchId : '', revision: version && version.revision || 0, ruleVersion: ruleVersion || '' }
+    })),
+    activeRows({ ...user, role: 'sales_department' }, false, parsed.meta.businessMonth)
+  ])
+  const monthRevision = monthLock && monthLock.revision || 0
+  const outside = new Set(existing.rows.filter(row => row.businessMonth === parsed.meta.businessMonth &&
+    !parsed.meta.districts.includes(row.district)).map(row => row.employeeId))
+  parsed.rows.filter(row => outside.has(row.employeeId)).forEach(row => parsed.errors.push({
+    rowNumber: 0, employeeId: row.employeeId, errors: ['员工编号已存在于该月其他区县，请先处理调区县数据']
+  }))
+  const previous = existing.rows.filter(row => row.businessMonth === parsed.meta.businessMonth && parsed.meta.districts.includes(row.district))
+  const incoming = new Map(parsed.rows.map(row => [row.employeeId, row]))
+  const differences = previous.filter(row => !incoming.has(row.employeeId) ||
+    JSON.stringify(row.items) !== JSON.stringify(incoming.get(row.employeeId).items) ||
+    row.realName !== incoming.get(row.employeeId).realName || row.district !== incoming.get(row.employeeId).district ||
+    row.gridName !== incoming.get(row.employeeId).gridName)
+    .map(row => ({
+      employeeId: row.employeeId, realName: row.realName, previousQuantity: row.quantity,
+      quantity: incoming.has(row.employeeId) ? incoming.get(row.employeeId).quantity : 0,
+      previousCommission: row.commission, commission: incoming.has(row.employeeId) ? incoming.get(row.employeeId).commission : 0,
+      missing: !incoming.has(row.employeeId)
+    }))
+  const previousIds = new Set(previous.map(row => row.employeeId))
+  parsed.rows.filter(row => !previousIds.has(row.employeeId)).forEach(row => differences.push({
+    employeeId: row.employeeId, realName: row.realName, previousQuantity: 0, quantity: row.quantity,
+    previousCommission: 0, commission: row.commission, added: true
+  }))
+  const token = core.hash(JSON.stringify({ meta: parsed.meta, rows: parsed.rows, versions, monthRevision }))
+  const unchanged = !parsed.errors.length && !differences.length && versions.every(item => {
+    const version = existing.versions.find(value => value.district === item.district)
+    return version && version.cutoffDate === parsed.meta.cutoffDate && version.finalized === parsed.meta.finalized && item.ruleVersion === core.RULE_VERSION
   })
-  const firstSheetName = workbook.SheetNames[0]
-
-  if (!firstSheetName) {
-    return {
-      success: false,
-      error: 'Excel文件中没有工作表'
-    }
+  return { ...parsed, versions, token, differences, monthLockId, monthRevision, unchanged }
+}
+function previewResult(prepared) {
+  const differences = prepared.differences.filter(item => item.missing ||
+    item.quantity < item.previousQuantity || item.commission < item.previousCommission)
+  return {
+    previewToken: prepared.token, meta: prepared.meta, totalEmployees: prepared.rows.length,
+    unchanged: prepared.unchanged,
+    totalQuantity: prepared.rows.reduce((sum, row) => sum + row.quantity, 0),
+    totalCommission: core.money(prepared.rows.reduce((sum, row) => sum + row.commission, 0)),
+    differenceCount: differences.length, differences: differences.slice(0, 100),
+    errorCount: prepared.errors.length, errors: prepared.errors.slice(0, 100)
   }
-
-  const worksheet = workbook.Sheets[firstSheetName]
-  const headers = getWorksheetHeaders(worksheet, XLSX)
-  const missingHeaders = IMPORT_TEMPLATE_HEADERS.filter(header => {
-    if (header === '发展人员网格通') {
-      return !headers.includes('发展人员网格通') && !headers.includes('办理人员')
-    }
-    return !headers.includes(header)
-  })
-
-  if (missingHeaders.length) {
-    return {
-      success: false,
-      error: `导入模板缺少字段：${missingHeaders.join('、')}`,
-      data: {
-        templateHeaders: IMPORT_TEMPLATE_HEADERS
+}
+async function commit(user, data) {
+  const prepared = await prepare(user, data)
+  if (prepared.errors.length) throw new Error('存在校验错误，不能发布')
+  if (!data.previewToken || data.previewToken !== prepared.token) throw new Error('数据或当前版本已变化，请重新预览')
+  if (prepared.unchanged) return { unchanged: true }
+  // 每次暂存独立，禁止并发请求覆盖已经生效的批次内容。
+  const batchId = core.hash(prepared.token + '|' + crypto.randomBytes(16).toString('hex'))
+  const now = new Date()
+  await db.collection(C.batches).doc(batchId).set({ data: {
+    ...prepared.meta, operatorOpenid: user.openid, operatorName: user.realName || '',
+    fileID: data.fileID, fileName: String(data.fileName || '').slice(0, 150), ruleVersion: core.RULE_VERSION,
+    totalEmployees: prepared.rows.length, totalQuantity: prepared.rows.reduce((sum, row) => sum + row.quantity, 0),
+    totalCommission: core.money(prepared.rows.reduce((sum, row) => sum + row.commission, 0)), createTime: now, state: 'staged'
+  } })
+  for (let offset = 0; offset < prepared.rows.length; offset += 20) {
+    await Promise.all(prepared.rows.slice(offset, offset + 20).map(row => db.collection(C.records)
+      .doc(core.hash(batchId + '|' + row.employeeId)).set({ data: {
+        ...row, businessMonth: prepared.meta.businessMonth, importBatchId: batchId, ruleVersion: core.RULE_VERSION
+      } })))
+  }
+  await db.runTransaction(async transaction => {
+    requireImporter((await transaction.collection('users').doc(user._id).get()).data)
+    const monthLock = await optionalDoc(C.versions, prepared.monthLockId, transaction)
+    if ((monthLock && monthLock.revision || 0) !== prepared.monthRevision) throw new Error('该月份数据已被更新，请重新预览')
+    await transaction.collection(C.versions).doc(prepared.monthLockId).set({ data: { revision: prepared.monthRevision + 1 } })
+    for (const item of prepared.versions) {
+      const id = versionId(prepared.meta.businessMonth, item.district)
+      const version = await optionalDoc(C.versions, id, transaction)
+      if ((version ? version.activeBatchId : '') !== item.previous ||
+          (version && version.revision || 0) !== item.revision || (version && version.finalized)) {
+        throw new Error('其他管理员已更新或定版，请重新预览')
       }
+      await transaction.collection(C.versions).doc(id).set({ data: {
+        businessMonth: prepared.meta.businessMonth, district: item.district, revision: item.revision + 1,
+        activeBatchId: batchId, cutoffDate: prepared.meta.cutoffDate, finalized: prepared.meta.finalized,
+        ruleVersion: core.RULE_VERSION,
+        updateTime: now, operatorOpenid: user.openid
+      } })
     }
-  }
-
-  const rawRows = XLSX.utils.sheet_to_json(worksheet, {
-    defval: '',
-    raw: true
+    await transaction.collection(C.batches).doc(batchId).update({ data: { state: 'published', publishTime: now } })
   })
-  const rows = rawRows
-    .map((row, index) => normalizeImportRow(row, index + 2))
-    .filter(row => row.handleTime || row.gridAccount || row.developer || row.businessName || row.businessNumber)
-
-  if (!rows.length) {
-    return {
-      success: false,
-      error: 'Excel文件中没有可导入的数据'
-    }
-  }
-
-  const userMap = await getUsersByGridAccounts(rows.map(row => row.gridAccount))
-  const importId = `import_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  const failedRows = []
-  const createdRecordIds = []
-
-  for (const row of rows) {
-    const errors = []
-    const businessDate = parseBusinessDate(row.handleTime)
-    const matchedUsers = userMap[row.gridAccount] || []
-    const productDetail = commissionRules.getCommissionDetail(row.businessName)
-
-    if (!businessDate) errors.push('办理时间格式不正确')
-    if (!row.gridAccount) errors.push('网格通账号不能为空')
-    if (!row.developer) errors.push('发展人员网格通不能为空')
-    if (!row.businessName) errors.push('业务名称不能为空')
-    if (!row.businessNumber) errors.push('业务号码不能为空')
-    if (!productDetail) errors.push(`未找到业务名称“${row.businessName}”对应的酬金配置`)
-    if (matchedUsers.length === 0) errors.push(`未找到网格通账号“${row.gridAccount}”对应用户`)
-    if (matchedUsers.length > 1) errors.push(`网格通账号“${row.gridAccount}”匹配到多个用户`)
-
-    const targetUser = matchedUsers[0]
-    if (targetUser && importer.role === 'district_manager' && targetUser.district !== importer.district) {
-      errors.push(`账号所属区县“${targetUser.district || '未配置'}”不在当前主管区县“${importer.district}”内`)
-    }
-
-    if (errors.length) {
-      failedRows.push({
-        rowNumber: row.rowNumber,
-        gridAccount: row.gridAccount,
-        businessName: row.businessName,
-        businessNumber: row.businessNumber,
-        errors
-      })
-      continue
-    }
-
-    const record = buildBusinessRecord(
-      {
-        date: businessDate,
-        gridAccount: row.gridAccount,
-        developer: row.developer,
-        businessName: row.businessName,
-        businessNumber: row.businessNumber
-      },
-      targetUser,
-      importer,
-      {
-        source: 'batch_import',
-        importId,
-        fileName
-      }
-    )
-
-    const result = await db.collection('business_records').add({
-      data: record
-    })
-    createdRecordIds.push(result._id)
-  }
-
-  return {
-    success: true,
-    data: {
-      importId,
-      total: rows.length,
-      successCount: createdRecordIds.length,
-      failCount: failedRows.length,
-      failedRows,
-      createdRecordIds
-    }
-  }
+  return { batchId, ...previewResult(prepared) }
 }
-
-// 获取业务记录列表
-async function getBusinessRecords(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const { 
-    page = 1, 
-    pageSize = 10,
-    filters = {},
-    sortBy = 'createTime',
-    sortOrder = 'desc'
-  } = data
-  
-  // 获取用户信息验证权限
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-  
-  const user = userQuery.data[0]
-  const currentPage = Math.max(Number(page) || 1, 1)
-  const currentPageSize = Math.min(Math.max(Number(pageSize) || 10, 1), MAX_QUERY_LIMIT)
-  const totalResult = await buildScopedRecordQuery(user, openid, filters).count()
-  const allRecords = await fetchAllRecords(buildScopedRecordQuery(user, openid, filters))
-  const result = await buildScopedRecordQuery(user, openid, filters)
-    .orderBy(sortBy, sortOrder)
-    .skip((currentPage - 1) * currentPageSize)
-    .limit(currentPageSize)
-    .get()
-  const records = (result.data || []).map(record => commissionRules.enrichRecordSettlement(record))
-  
-  return {
-    success: true,
-    data: {
-      records,
-      total: totalResult.total,
-      page: currentPage,
-      pageSize: currentPageSize,
-      totalPages: Math.ceil(totalResult.total / currentPageSize),
-      stats: getRecordStats(allRecords),
-      filterOptions: buildFilterOptions(allRecords)
-    }
-  }
-}
-
-// 更新业务记录
-async function updateBusinessRecord(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const { recordId, updates } = data
-  
-  // 获取用户信息验证权限
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-  
-  const user = userQuery.data[0]
-  
-  // 获取记录验证权限
-  const recordQuery = await db.collection('business_records').doc(recordId).get()
-  
-  if (!recordQuery.data) {
-    return {
-      success: false,
-      error: '记录不存在'
-    }
-  }
-  
-  const record = recordQuery.data
-  
-  // 权限验证
-  if (user.role === 'sales_person' && !isUserRecordOwner(record, user)) {
-    return {
-      success: false,
-      error: '权限不足'
-    }
-  }
-  
-  // 更新记录
-  const updateData = {
-    ...updates,
-    updateTime: new Date()
-  }
-  
-  if (user.role !== 'sales_person') {
-    // 管理员可以更新状态
-    updateData.reviewedBy = {
-      openid: openid,
-      userId: user._id,
-      name: user.nickName,
-      role: user.role
-    }
-    updateData.reviewTime = new Date()
-  }
-  
-  const result = await db.collection('business_records').doc(recordId).update({
-    data: updateData
+async function reopen(user, data) {
+  requireImporter(user)
+  const reason = String(data.reason || '').trim()
+  if (!reason) throw new Error('请填写撤销定版原因')
+  await db.runTransaction(async transaction => {
+    requireImporter((await transaction.collection('users').doc(user._id).get()).data)
+    const id = versionId(data.businessMonth, data.district)
+    const version = await optionalDoc(C.versions, id, transaction)
+    if (!version || !version.finalized) throw new Error('该范围没有已定版数据')
+    await transaction.collection(C.versions).doc(id).update({ data: {
+      finalized: false, revision: (version.revision || 0) + 1, updateTime: new Date()
+    } })
+    await transaction.collection(C.batches).doc(version.activeBatchId).update({ data: {
+      reopenLogs: _.push([{ reason, operatorOpenid: user.openid, time: new Date() }])
+    } })
   })
-  
-  return {
-    success: true,
-    data: result
-  }
+  return {}
 }
-
-// 删除业务记录
-async function deleteBusinessRecord(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const { recordId } = data
-  
-  // 获取用户信息验证权限
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
+async function clearDistrictMonth(user, data) {
+  if (user.role !== 'system_admin') throw new Error('仅系统管理员可清空区县月份数据')
+  const reason = String(data.reason || '').trim()
+  if (!reason || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(String(data.businessMonth || '')) || !core.DISTRICTS.includes(data.district)) {
+    throw new Error('请选择有效区县月份并填写更正原因')
   }
-  
-  const user = userQuery.data[0]
-  
-  // 获取记录验证权限
-  const recordQuery = await db.collection('business_records').doc(recordId).get()
-  
-  if (!recordQuery.data) {
-    return {
-      success: false,
-      error: '记录不存在'
-    }
-  }
-  
-  const record = recordQuery.data
-  
-  // 权限验证
-  if (user.role === 'sales_person' && !isUserRecordOwner(record, user)) {
-    return {
-      success: false,
-      error: '权限不足'
-    }
-  }
-  
-  // 删除记录
-  const result = await db.collection('business_records').doc(recordId).remove()
-  
-  return {
-    success: true,
-    data: result
-  }
-}
-
-// 获取统计数据
-async function getStatistics(wxContext, data = {}) {
-  const openid = wxContext.OPENID
-  const { timeRange = 'all', filters = {} } = data
-  
-  // 获取用户信息
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
-  }
-  
-  const user = userQuery.data[0]
-  const queryFilters = { ...filters }
-
-  if (timeRange !== 'all') {
+  const batchId = core.hash(crypto.randomBytes(16).toString('hex'))
+  await db.runTransaction(async transaction => {
+    const fresh = (await transaction.collection('users').doc(user._id).get()).data
+    if (fresh.role !== 'system_admin' || fresh.status === 'inactive') throw new Error('系统维护权限已变更')
+    const id = versionId(data.businessMonth, data.district)
+    const version = await optionalDoc(C.versions, id, transaction)
+    if (!version || version.activeBatchId !== data.activeBatchId) throw new Error('区县数据已变化，请刷新后操作')
+    if (version.finalized) throw new Error('该月已定版，请先由授权人员撤销定版')
+    const lockId = core.hash('month|' + data.businessMonth)
+    const lock = await optionalDoc(C.versions, lockId, transaction)
     const now = new Date()
-    let startDate
-    
-    switch (timeRange) {
-      case 'today':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        break
-      case 'week':
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        break
-      case 'month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-        break
-    }
-    
-    if (startDate) {
-      queryFilters.startDate = startDate
-    }
-  }
-
-  const records = await fetchAllRecords(buildScopedRecordQuery(user, openid, queryFilters))
-  const stats = getRecordStats(records)
-  
-  return {
-    success: true,
-    data: stats
-  }
+    await transaction.collection(C.batches).doc(batchId).set({ data: {
+      businessMonth: data.businessMonth, districts: [data.district], cutoffDate: version.cutoffDate, finalized: false,
+      state: 'published', operation: 'clear_district', reason, operatorOpenid: user.openid, operatorName: user.realName || '',
+      totalEmployees: 0, totalQuantity: 0, totalCommission: 0, ruleVersion: core.RULE_VERSION, createTime: now
+    } })
+    const { _id, ...previous } = version
+    await transaction.collection(C.versions).doc(id).set({ data: {
+      ...previous, activeBatchId: batchId, revision: (version.revision || 0) + 1, updateTime: now, operatorOpenid: user.openid
+    } })
+    await transaction.collection(C.versions).doc(lockId).set({ data: { revision: (lock && lock.revision || 0) + 1 } })
+  })
+  return {}
 }
-
-function formatSettlementForExport(item) {
-  if (!item) {
-    return '0.00元，状态：未核算'
-  }
-
-  return `${Number(item.amount || 0).toFixed(2)}元，状态：${item.statusText || '未核算'}`
+async function exportData(user, data) {
+  const active = await activeRows(user, false, data.filters && data.filters.businessMonth)
+  const rows = filterRecords(core.flatten(active.rows, active.versions), data.filters)
+  const table = rows.map(row => {
+    const output = {
+      '业务月份': row.businessMonth, '区县': row.district, '网格名称': row.gridName, '装维人员姓名': row.developer,
+      '员工编号': row.employeeId, '业务名称': row.businessName, '业务量': row.quantity, '总酬金': row.commission,
+      '统计截止日期': row.cutoffDate, '状态': row.statusText
+    }
+    row.settlementSchedule.forEach(item => { output[item.period] = item.amount })
+    return output
+  })
+  const XLSX = require('xlsx'), workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(table), '销售月度业务')
+  return { base64: XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' }), filename: '销售月度业务.xlsx' }
 }
-
-// 导出数据
-async function exportData(wxContext, event) {
-  const openid = wxContext.OPENID
-  const { filters = {}, format = 'xlsx' } = event
-  
-  console.log('导出数据云函数被调用:', { openid, filters, format })
-  
-  // 获取用户信息验证权限
-  const userQuery = await db.collection('users').where({
-    openid: openid
-  }).get()
-  
-  if (userQuery.data.length === 0) {
-    return {
-      success: false,
-      error: '用户不存在'
-    }
+async function archiveLegacy(user, data) {
+  if (user.role !== 'system_admin') throw new Error('仅系统管理员可维护旧数据')
+  if (data.confirm !== 'BACKUP_AND_CLEAR_LEGACY_SALES') throw new Error('清理旧销售数据需要明确确认')
+  const records = await all(db.collection('business_records'))
+  if (!records.length) return { deletedCount: 0 }
+  const backup = await cloud.uploadFile({ cloudPath: 'sales_backups/legacy_' + Date.now() + '_' + crypto.randomBytes(12).toString('hex') + '.json',
+    fileContent: Buffer.from(JSON.stringify({ backupTime: new Date(), records }), 'utf8') })
+  if (!backup.fileID) throw new Error('备份未成功，禁止清理')
+  for (let offset = 0; offset < records.length; offset += 20) {
+    await db.collection('business_records').where({ _id: _.in(records.slice(offset, offset + 20).map(row => row._id)) }).remove()
   }
-  
-  const user = userQuery.data[0]
-  
-  // 权限验证 - 只有管理员可以导出数据
-  if (!['district_manager', 'sales_department', 'sales_person'].includes(user.role) && !isSystemAdmin(user)) {
-    return {
-      success: false,
-      error: '权限不足'
+  return { deletedCount: records.length, backupFileID: backup.fileID }
+}
+exports.main = async (event = {}) => {
+  try {
+    if (event.action === 'test') return { success: true, apiVersion: API_VERSION, message: '销售月度数据服务正常' }
+    const user = await currentUser(), data = event.data || {}
+    let result
+    switch (event.action) {
+      case 'getAccess': result = { role: user.role, canImport: core.canImport(user), canMaintain: user.role === 'system_admin' }; break
+      case 'getSummary': result = await summary.getSummary(user, data); break
+      case 'recordReceipt': result = await summary.recordReceipt(user, data); break
+      case 'importPreview': result = previewResult(await prepare(user, data)); break
+      case 'importCommit': result = await commit(user, data); break
+      case 'reopenMonth': result = await reopen(user, data); break
+      case 'clearDistrictMonth': result = await clearDistrictMonth(user, data); break
+      case 'getImportBatches': {
+        if (user.role !== 'system_admin') requireImporter(user)
+        const [records, versions] = await Promise.all([
+          all(db.collection(C.batches).where({ state: 'published' })), versionsFor(user)
+        ])
+        result = { records: records.sort((a, b) => new Date(b.createTime) - new Date(a.createTime)).slice(0, 30), versions }
+        break
+      }
+      case 'list':
+      case 'getStats': result = await list(user, data); break
+      case 'export': result = await exportData(user, { ...event, ...data }); break
+      case 'archiveLegacy': result = await archiveLegacy(user, data); break
+      default: throw new Error('原逐笔录入、修改、删除接口已关闭，请使用月度Excel导入')
     }
-  }
-  
-  const query = buildScopedRecordQuery(user, openid, filters).orderBy('createTime', 'desc')
-  const records = await fetchAllRecords(query)
-  const enrichedRecords = records.map(record => commissionRules.enrichRecordSettlement(record))
-  
-  if (format === 'xlsx') {
-    // 生成Excel文件
-    const XLSX = require('xlsx')
-    
-    // 获取业务归属人信息，兼容旧记录中没有 owner 快照的情况。
-    const userIds = [...new Set(enrichedRecords.map(record => record.userId).filter(Boolean))]
-    let userMap = {}
-    
-    if (userIds.length > 0) {
-      const usersQuery = await db.collection('users').where({
-        openid: db.command.in(userIds)
-      }).get()
-      
-      usersQuery.data.forEach(user => {
-        userMap[user.openid] = user.realName || user.nickName || user.name || '未知用户'
-      })
-    }
-    
-    // 准备Excel数据
-    const excelData = enrichedRecords.map(record => {
-      const schedule = record.settlementSchedule || []
-      const summary = record.settlementSummary || {}
-      const owner = record.owner || {}
-      const submitter = record.submittedBy || {}
+    return { success: true, apiVersion: API_VERSION, data: result }
+  } catch (error) {
+    console.error('businessData:', error)
+    const message = String(error.message || '')
+    const missingCollection = [C.records, C.batches, C.versions, C.receipts, 'sales_employees', 'sales_claim_logs']
+      .find(name => message.includes(name))
+    if (missingCollection && (Number(error.errCode) === -502005 ||
+        /database collection not exists|Db or Table not exist|DATABASE_COLLECTION_NOT_EXIST/i.test(message))) {
       return {
-        '业务日期': record.date ? new Date(record.date).toLocaleDateString('zh-CN') : '',
-        '提交人': submitter.name || submitter.realName || submitter.nickName || '',
-        '区县': record.district || '',
-        '网格通账号': record.gridAccount || '',
-        '业务归属人': owner.name || owner.realName || owner.nickName || userMap[record.userId] || '',
-        '业务名称': record.businessName || '',
-        '业务号码': record.businessNumber || record.userPhone || '',
-        '发展人员': record.developer || '',
-        '酬金金额': record.commission ? Number(record.commission).toFixed(2) : '0.00',
-        'T+1月核算': formatSettlementForExport(schedule[0]),
-        'T+2月核算': formatSettlementForExport(schedule[1]),
-        'T+3月核算': formatSettlementForExport(schedule[2]),
-        'T+4月核算': formatSettlementForExport(schedule[3]),
-        'T+5月核算': formatSettlementForExport(schedule[4]),
-        '目前已核算总金额': `${summary.settledRangeText || '暂无已核算'} ${summary.settledTotalText || '0.00'}元`,
-        '目前未核算总金额': `${summary.unsettledPeriodsText || '暂无未核算'} ${summary.unsettledTotalText || '0.00'}元`,
-        '录入来源': record.source || '',
-        '创建时间': record.createTime ? new Date(record.createTime).toLocaleString('zh-CN') : ''
-      }
-    })
-    
-    // 创建工作簿
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(excelData)
-    
-    // 设置列宽
-    const colWidths = [
-      { wch: 12 }, // 业务日期
-      { wch: 10 }, // 提交人
-      { wch: 8 },  // 区县
-      { wch: 16 }, // 网格通账号
-      { wch: 10 }, // 业务归属人
-      { wch: 25 }, // 业务名称
-      { wch: 15 }, // 用户号码
-      { wch: 10 }, // 发展人员
-      { wch: 10 }, // 酬金金额
-      { wch: 24 }, // T+1
-      { wch: 24 }, // T+2
-      { wch: 24 }, // T+3
-      { wch: 24 }, // T+4
-      { wch: 24 }, // T+5
-      { wch: 28 }, // 已核算
-      { wch: 36 }, // 未核算
-      { wch: 12 }, // 录入来源
-      { wch: 20 }  // 创建时间
-    ]
-    ws['!cols'] = colWidths
-    
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(wb, ws, '业务数据')
-    
-    // 生成Excel文件的Buffer
-    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
-    
-    // 转换为base64
-    const base64String = excelBuffer.toString('base64')
-    
-    return {
-      success: true,
-      data: {
-        base64: base64String,
-        filename: `业务数据_${new Date().toISOString().slice(0, 10)}.xlsx`,
-        total: enrichedRecords.length,
-        exportTime: new Date(),
-        exportedBy: user.nickName
+        success: false, apiVersion: API_VERSION, errorCode: 'SALES_DATABASE_NOT_INITIALIZED',
+        error: '销售数据库尚未初始化：缺少集合 ' + missingCollection + '。请在当前云环境创建此集合，权限选择“所有用户不可读写”。'
       }
     }
-  } else {
-    // 返回JSON数据
-    return {
-      success: true,
-      data: {
-        records: enrichedRecords,
-        total: enrichedRecords.length,
-        exportTime: new Date(),
-        exportedBy: user.nickName
-      }
-    }
+    return { success: false, apiVersion: API_VERSION, error: error.message || '操作失败' }
   }
 }

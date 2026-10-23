@@ -15,7 +15,7 @@
           bindtap="selectWorkspace"
         >
           <view class="workspace-option-title">销售界面</view>
-          <view class="workspace-option-desc">适合装维人员，包含酬金查看、业务采集、数据管理。</view>
+          <view class="workspace-option-desc">员工编号认领、酬金查看、业务量查询。</view>
         </view>
 
         <view
@@ -47,36 +47,47 @@
           <view class="user-subtitle">{{profileSubtitle}}</view>
         </view>
         <view class="user-tools">
-          <button class="tool-btn" bindtap="openProfileModal">编辑个人信息</button>
+          <button class="tool-btn" bindtap="openProfileModal">{{isEmployee ? '个人信息' : '管理资料'}}</button>
           <button class="tool-btn tool-btn-ghost" bindtap="onLogout">退出登录</button>
         </view>
       </view>
 
-      <view class="salary-card">
-        <view class="salary-banner">{{monthLabel}} 当月计件酬金</view>
+      <view class="feedback-card" wx:if="{{canImport}}">
+        <button class="feedback-btn" bindtap="navigateToImport">销售月度业务量导入</button>
+      </view>
+      <view class="feedback-card" wx:if="{{canMaintain}}">
+        <button class="feedback-btn" bindtap="navigateToMaintenance">认领与数据维护</button>
+      </view>
+      <picker mode="date" fields="month" value="{{monthLabel}}" bindchange="onMonthChange"><view class="feedback-card">{{isEmployee ? '查看月份' : '统计月份'}}：{{monthLabel}} ▾</view></picker>
+      <view wx:if="{{loading}}">加载中…</view>
+      <view class="feedback-card" wx:if="{{errorText}}">{{errorText}}</view>
+      <view class="feedback-card" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
+      <sales-participation wx:if="{{!isEmployee}}" value="{{participation}}" scope-label="{{scopeLabel}}" />
+      <view class="salary-card" wx:if="{{isEmployee && !loading && !errorText}}">
+        <view class="salary-banner">{{monthLabel}} 业务预计总酬金 · {{monthStatus}}</view>
         <view class="salary-body">
           <view class="salary-amount">￥{{stats.monthCommission}}</view>
-          <view class="salary-note">本月共完成 {{stats.monthRecords}} 笔业务</view>
+          <view class="salary-note">该月共完成 {{stats.monthRecords || 0}} 笔业务 · {{cutoffDate ? '截至' + cutoffDate : '暂无数据'}}</view>
         </view>
       </view>
 
-      <view class="detail-card">
+      <view class="detail-card" wx:if="{{isEmployee && !loading && !errorText}}">
         <view class="detail-header">业务量与酬金明细</view>
         <view class="detail-grid">
           <view class="detail-item">
-            <view class="detail-label">今日业务量</view>
-            <view class="detail-value">{{stats.todayRecords}} 笔</view>
+            <view class="detail-label">截至{{monthLabel}}计划到期酬金</view>
+            <view class="detail-value">￥{{stats.settledCommission}}</view>
           </view>
           <view class="detail-item">
-            <view class="detail-label">今日酬金</view>
-            <view class="detail-value detail-money">￥{{stats.todayCommission}}</view>
+            <view class="detail-label">{{monthLabel}}预计核发（含历史分期）</view>
+            <view class="detail-value detail-money">￥{{stats.currentDue}}</view>
           </view>
           <view class="detail-item">
-            <view class="detail-label">本月业务量</view>
+            <view class="detail-label">所选月业务量</view>
             <view class="detail-value">{{stats.monthRecords}} 笔</view>
           </view>
           <view class="detail-item">
-            <view class="detail-label">本月酬金</view>
+            <view class="detail-label">所选月业务总酬金</view>
             <view class="detail-value detail-money">￥{{stats.monthCommission}}</view>
           </view>
           <view class="detail-item">
@@ -90,15 +101,16 @@
         </view>
       </view>
 
-      <view class="feedback-card">
-        <view class="feedback-tip">如对酬金有异议，可在这里提交反馈并查看处理进度。</view>
-        <button class="feedback-btn" bindtap="navigateToFeedback">提出反馈</button>
+      <view class="feedback-card" wx:if="{{isEmployee || canHandleFeedback}}">
+        <view class="feedback-tip">{{isEmployee ? '如对酬金有异议，可提交反馈并查看处理进度。' : '处理分配给本人的销售酬金反馈。'}}</view>
+        <button class="feedback-btn" bindtap="navigateToFeedback">{{isEmployee ? '我的酬金反馈' : '待处理反馈（' + pendingCount + '）'}}</button>
       </view>
+      <view wx:if="{{feedbackError}}">{{feedbackError}}</view>
     </view>
   </view>
 </scroll-view>
 
-<view wx:if="{{showProfileModal}}" class="modal-mask" bindtap="closeProfileModal">
+<view wx:if="{{showProfileModal && isEmployee}}" class="modal-mask" bindtap="closeProfileModal">
   <view class="modal-panel" catchtap="stopModalPropagation">
     <view class="modal-header">
       <view class="modal-title">补充个人信息</view>
@@ -106,29 +118,10 @@
     </view>
 
     <view class="form-group">
-      <view class="form-label">姓名</view>
-      <input class="form-input" placeholder="请输入姓名" value="{{profileForm.realName}}" data-field="realName" bindinput="onProfileInputChange" />
+      <view class="form-label">员工编号</view>
+      <input class="form-input" placeholder="输入管理员已导入的员工编号" value="{{profileForm.employeeId}}" disabled="{{claimed}}" data-field="employeeId" bindinput="onProfileInputChange" />
+      <view>填写编号即可认领，姓名、区县和网格由导入资料自动取得。</view>
     </view>
-
-    <view class="form-group">
-      <view class="form-label">网格通账号</view>
-      <input class="form-input" placeholder="请输入网格通账号" value="{{profileForm.gridAccount}}" data-field="gridAccount" bindinput="onProfileInputChange" />
-    </view>
-
-    <view class="form-group">
-      <view class="form-label">区县</view>
-      <picker range="{{districts}}" bindchange="onDistrictChange">
-        <view class="picker-field {{profileForm.district ? '' : 'placeholder'}}">{{profileForm.district || '请选择区县'}}</view>
-      </picker>
-    </view>
-
-    <view class="form-group">
-      <view class="form-label">所属网格</view>
-      <picker range="{{grids}}" bindchange="onGridChange" disabled="{{!profileForm.district}}">
-        <view class="picker-field {{profileForm.gridName ? '' : 'placeholder'}}">{{profileForm.gridName || '请选择所属网格'}}</view>
-      </picker>
-    </view>
-
-    <button class="submit-btn" bindtap="submitProfile" loading="{{savingProfile}}">保存个人信息</button>
+    <button class="submit-btn" bindtap="submitProfile" loading="{{savingProfile}}">认领员工编号</button>
   </view>
 </view>

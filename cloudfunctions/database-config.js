@@ -1,11 +1,25 @@
 // 数据库集合配置和安全规则
 module.exports = {
   collections: [
+    { name: 'sales_month_records', description: '销售员工月度累计业务量及规则快照',
+      indexes: [{ keys: { importBatchId: 1 } }, { keys: { employeeId: 1 } },
+        { keys: { importBatchId: 1, employeeId: 1 } }, { keys: { importBatchId: 1, district: 1 } }] },
+    { name: 'sales_import_batches', description: '销售导入批次及定版更正记录', indexes: [{ keys: { state: 1 } }] },
+    { name: 'sales_active_versions', description: '销售月份区县有效版本和月份并发锁', indexes: [{ keys: { district: 1 } }] },
+    { name: 'sales_employees', description: '员工编号与微信账号独立认领关系',
+      indexes: [{ keys: { employeeId: 1 }, unique: true }, { keys: { userOpenid: 1 }, unique: true }] },
+    { name: 'sales_claim_logs', description: '员工认领更正审计', indexes: [{ keys: { employeeId: 1 } }] },
+    { name: 'sales_data_receipts', description: '员工查看月度区县业务版本记录',
+      indexes: [{ keys: { businessMonth: 1, activeBatchId: 1 } }] },
     {
       name: 'users',
       description: '用户信息表',
       fields: {
         openid: 'string',
+        employeeId: 'string',
+        salesClaimed: 'boolean',
+        salesManagedDistrict: 'string',
+        permissions: 'object',
         nickName: 'string',
         avatarUrl: 'string',
         role: 'string',
@@ -294,7 +308,14 @@ module.exports = {
         salaryAmount: 'number',
         relatedWorkOrder: 'object',
         content: 'string',
-        reviewNote: 'string',
+        employeeId: 'string',
+        workflowVersion: 'number',
+        roundNo: 'number',
+        messages: 'array',
+        resolution: 'object',
+        employeeConfirmed: 'boolean',
+        closedBy: 'object',
+        closedTime: 'date',
         status: 'string',
         submitter: 'object',
         managerReview: 'object',
@@ -309,6 +330,7 @@ module.exports = {
         { keys: { 'submitter.openid': 1 } },
         { keys: { 'managerReview.gridAccount': 1 } },
         { keys: { 'supervisorReview.gridAccount': 1 } },
+        { keys: { district: 1 } },
         { keys: { createTime: -1 } }
       ]
     },
@@ -340,7 +362,7 @@ module.exports = {
     },
     {
       name: 'feedback_routes',
-      description: '薪酬反馈审批路由表',
+      description: '销售与集客共用的区县反馈处理人名单',
       fields: {
         district: 'string',
         districtManager: 'object',
@@ -372,12 +394,18 @@ module.exports = {
   ],
 
   securityRules: {
+    sales_month_records: { read: false, write: false },
+    sales_import_batches: { read: false, write: false },
+    sales_active_versions: { read: false, write: false },
+    sales_employees: { read: false, write: false },
+    sales_claim_logs: { read: false, write: false },
+    sales_data_receipts: { read: false, write: false },
     users: {
       read: false,
       write: false
     },
     business_records: {
-      read: true,
+      read: false,
       write: false
     },
     line_project_records: {

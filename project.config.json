@@ -46,7 +46,9 @@
   "cloudfunctionRoot": "cloudfunctions/",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "file", "value": "test-integration.js" }
+    ],
     "include": []
   },
   "cloud": {

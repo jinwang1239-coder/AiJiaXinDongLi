@@ -29,19 +29,15 @@ assert.deepStrictEqual(
   ),
   { workspaceType: 'line_project', scene: 'line_project_workorders' }
 )
-assert.strictEqual(service.resolveFeedbackStatus('approved', 'pending'), 'approved')
-assert.strictEqual(service.resolveFeedbackStatus('approved', 'approved'), 'approved')
-assert.strictEqual(service.resolveFeedbackStatus('rejected', 'approved'), 'rejected')
-assert.strictEqual(service.resolveFeedbackStatus('pending', 'pending'), 'pending')
 assert.strictEqual(service.getEffectiveFeedbackStatus({
   status: 'processing',
   managerReview: { status: 'approved' },
   supervisorReview: { status: 'pending' }
-}), 'approved')
+}), 'awaiting_submitter')
 assert.strictEqual(service.getEffectiveFeedbackStatus({
   status: 'resolved',
   resolution: { content: '已解释' }
-}), 'resolved')
+}), 'awaiting_submitter')
 assert.strictEqual(service.getEffectiveFeedbackStatus({
   workspaceType: 'line_project',
   scene: 'line_project_workorders',
@@ -73,11 +69,15 @@ assert.deepStrictEqual(service.normalizeFeedbackStatus({
   status: 'approved',
   managerReview: { status: 'approved', name: '处理人', reviewNote: '历史答复' }
 }).resolution.content, '历史答复')
+const currentRoute = { district: '测试区县', supervisor: { gridAccount: '200', name: '现任监督员' } }
+const currentHandler = { workspaceType: 'line_project', district: '测试区县', gridAccount: '200', realName: '现任监督员' }
 assert.strictEqual(service.getPendingReviewType({
-  status: 'pending',
-  managerReview: { status: 'pending', gridAccount: '100' },
-  supervisorReview: { status: 'pending', gridAccount: '200' }
-}, '200'), 'supervisor')
+  status: 'pending', district: '测试区县',
+  supervisorReview: { status: 'pending', gridAccount: 'OLD_ACCOUNT' }
+}, currentHandler, currentRoute), 'supervisor')
+assert.strictEqual(service.getPendingReviewType({ status: 'closed', district: '测试区县' }, currentHandler, currentRoute), '')
+assert.strictEqual(service.getPendingReviewType({ status: 'pending', district: '其他区县' }, currentHandler, currentRoute), '')
+assert.strictEqual(service.getPendingReviewType({ status: 'pending', district: '测试区县' }, { ...currentHandler, realName: '错误姓名' }, currentRoute), '')
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b2', 'b1'] }, ['b1', 'b2']), true)
 assert.strictEqual(service.hasSameBatchVersion({ importBatchNos: ['b1'] }, ['b2']), false)
 assert.strictEqual(service.isMonthlyFeedbackLimitEnabled({ workspaceType: 'line_project' }), false)

@@ -1,0 +1,13 @@
+<view class="receipt-card" wx:if="{{value}}">
+  <view class="title">{{scopeLabel}}员工数据接收情况</view>
+  <view class="stats-grid">
+    <view>应接收<view class="number">{{value.expected}}人</view></view>
+    <view>已接收<view class="number">{{value.received}}人</view></view>
+    <view>未接收<view class="number">{{value.pending}}人</view></view>
+    <view>参与率<view class="number">{{value.rate}}</view></view>
+  </view>
+  <view class="district" wx:for="{{value.districts}}" wx:key="district">
+    <view class="header"><text>{{item.district}}</text><text class="rate">{{item.rate}}</text></view>
+    <view class="counts">应接收 {{item.expected}}人 · 已接收 {{item.received}}人 · 未接收 {{item.pending}}人</view>
+  </view>
+</view>

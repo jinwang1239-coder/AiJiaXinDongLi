@@ -331,4 +331,21 @@ db.collection('line_project_salary_import_batches').createIndex({
   name: 'line_project_salary_batch_month_index'
 })
 
+// 销售月度业务集合须预先创建并设置为客户端不可读写，见 businessData/SETUP.md。
+;[
+  ['sales_month_records', { importBatchId: 1 }, 'sales_batch'],
+  ['sales_month_records', { employeeId: 1 }, 'sales_employee'],
+  ['sales_month_records', { importBatchId: 1, employeeId: 1 }, 'sales_batch_employee'],
+  ['sales_month_records', { importBatchId: 1, district: 1 }, 'sales_batch_district'],
+  ['sales_import_batches', { state: 1 }, 'sales_batch_state'],
+  ['sales_active_versions', { district: 1 }, 'sales_version_district'],
+  ['sales_employees', { employeeId: 1 }, 'sales_employee_unique', true],
+  ['sales_employees', { userOpenid: 1 }, 'sales_employee_openid_unique', true],
+  ['sales_claim_logs', { employeeId: 1 }, 'sales_claim_employee'],
+  ['sales_data_receipts', { businessMonth: 1, activeBatchId: 1 }, 'sales_receipt_version'],
+  ['salary_feedbacks', { district: 1 }, 'feedback_district']
+].forEach(([collection, keys, name, unique = false]) => {
+  db.collection(collection).createIndex(keys, { name, unique })
+})
+
 console.log('数据库初始化完成')

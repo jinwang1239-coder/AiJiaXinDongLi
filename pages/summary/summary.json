@@ -1,0 +1,8 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar"
+  },
+  "navigationBarTitleText": "业务汇总",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#f5f7fa"
+}

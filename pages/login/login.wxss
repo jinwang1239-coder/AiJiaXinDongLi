@@ -103,33 +103,6 @@ page {
   font-weight: 600;
 }
 
-.login-tips {
-  padding: 32rpx;
-  border-radius: 24rpx;
-  background: #fff;
-  box-shadow: 0 12rpx 28rpx rgba(54, 79, 110, 0.08);
-}
-
-.login-tips > text {
-  display: block;
-  margin-bottom: 20rpx;
-  text-align: center;
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #2f3b4d;
-}
-
-.tips-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-}
-
-.tip-item {
-  font-size: 26rpx;
-  color: #66768a;
-}
-
 .user-section {
   display: flex;
   flex-direction: column;
@@ -258,7 +231,12 @@ page {
 .feedback-btn {
   margin-top: 20rpx;
   height: 80rpx;
-  line-height: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  line-height: 1.4;
   border-radius: 18rpx;
   background: #1f8df3;
   color: #fff;

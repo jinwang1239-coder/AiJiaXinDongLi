@@ -1,574 +1,143 @@
-// pages/collect/collect.js
 const auth = require('../../utils/auth')
-const commission = require('../../utils/commission-fixed')
-const productConfig = require('../../utils/product-config')
-const storage = require('../../utils/storage')
-const workspace = require('../../utils/workspace')
-
-const MANAGER_ROLES = ['district_manager', 'sales_department', 'system_admin']
-const DISTRICTS = [
-  '监利',
-  '洪湖',
-  '石首',
-  '松滋',
-  '公安县',
-  '江陵',
-  '沙市区',
-  '荆州区',
-  '开发区'
-]
-
-const IMPORT_TEMPLATE_HEADERS = ['办理时间', '网格通账号', '发展人员网格通', '业务名称', '业务号码']
+const { callSales, currentMonth } = require('../../utils/sales-service')
 
 Page({
   data: {
-    formData: {
-      date: '',
-      district: '',
-      businessName: '',
-      userPhone: '',
-      gridAccount: '',
-      attachments: []
-    },
-    estimatedCommission: 0,
-    products: [],
-    productIndex: 0,
-    districts: DISTRICTS,
-    userRole: null,
-    currentUserGridAccount: '',
-    currentUserDistrict: '',
-    canBatchImport: false,
-    loading: false,
-    submitting: false,
-    importing: false,
-    importFile: null,
-    importResult: null,
-    importTemplateText: IMPORT_TEMPLATE_HEADERS.join('、'),
-    phonePlaceholder: '\u8bf7\u8f93\u516511\u4f4d\u624b\u673a\u53f7\u7801',
-    gridAccountPlaceholder: '\u8bf7\u8f93\u5165\u53d1\u5c55\u4eba\u5458\u7f51\u683c\u901a\u8d26\u53f7'
+    canImport: false, canMaintain: false, maintenanceOnly: false, busy: false, importAction: '', businessMonth: currentMonth(),
+    cutoffDate: '',
+    finalized: false, file: null, fileID: '', preview: null, batches: [], activeVersions: [], employeeId: ''
   },
-
-  onLoad() {
-    this.initData()
-  },
-
+  onLoad(options = {}) { this.setData({ maintenanceOnly: options.mode === 'maintenance' }) },
   async onShow() {
-    if (await this.checkLoginStatus()) {
-      this.loadLastFormData()
-    }
+    try {
+      if (!await auth.ensureLoggedIn()) { wx.switchTab({ url: '/pages/login/login' }); return }
+      const access = await callSales('getAccess')
+      const now = new Date()
+      this.setData({ canImport: access.canImport, canMaintain: access.canMaintain, cutoffDate: this.data.cutoffDate ||
+        currentMonth() + '-' + String(now.getDate()).padStart(2, '0') })
+      if (access.canImport || access.canMaintain) await this.loadBatches()
+    } catch (error) { this.setData({ canImport: false }); this.showError(error) }
   },
-
-  initData() {
-    this.setData({
-      products: productConfig.getProducts(),
-      'formData.date': this.formatDate(new Date())
-    })
+  showError(error) { wx.showModal({ title: '操作提示', content: error.message || '操作失败', showCancel: false }) },
+  onMonthChange(e) {
+    const month = e.detail.value
+    const [year, number] = month.split('-').map(Number)
+    const last = new Date(year, number, 0).getDate()
+    const day = month === currentMonth() ? new Date().getDate() : last
+    this.setData({ businessMonth: month, cutoffDate: month + '-' + String(day).padStart(2, '0'), preview: null, finalized: false })
   },
-
-  loadLastFormData() {
-    const lastData = storage.getLastFormData()
-    if (!lastData) {
-      return
-    }
-
-    wx.showModal({
-      title: '自动填充',
-      content: '检测到上次填写的表单信息，是否自动填充？',
-      success: (res) => {
-        if (res.confirm) {
-          this.autoFillForm(lastData)
-        }
-      }
-    })
-  },
-
-  autoFillForm(lastData) {
-    const detail = commission.getCommissionDetail(lastData.businessName)
-    const businessName = detail ? detail.businessName : ''
-    const productIndex = this.data.products.findIndex(
-      product => product.name === businessName
-    )
-
-    this.setData({
-      formData: {
-        ...this.data.formData,
-        district: lastData.district || this.data.formData.district,
-        userPhone: lastData.userPhone || this.data.formData.userPhone,
-        gridAccount: lastData.gridAccount || this.data.formData.gridAccount,
-        businessName
-      },
-      productIndex: productIndex >= 0 ? productIndex : 0
-    })
-
-    this.calculateCommission()
-
-    wx.showToast({
-      title: '已自动填充',
-      icon: 'success'
-    })
-  },
-
-  showLoginRequiredModal() {
-    wx.showModal({
-      title: '请先登录',
-      content: '使用该功能前需要先登录。',
-      showCancel: false,
-      success: () => {
-        wx.switchTab({
-          url: '/pages/login/login'
-        })
-      }
-    })
-  },
-
-  async checkLoginStatus() {
-    const user = await auth.ensureLoggedIn()
-    if (!user) {
-      this.showLoginRequiredModal()
-      return false
-    }
-
-    if (!workspace.isSalesWorkspace(user)) {
-      workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.SALES)
-      return false
-    }
-
-    const nextData = {
-      userRole: user.role || null,
-      currentUserGridAccount: user.gridAccount || '',
-      currentUserDistrict: user.district || '',
-      canBatchImport: MANAGER_ROLES.includes(user.role)
-    }
-
-    if (user.gridAccount && !this.data.formData.gridAccount) {
-      nextData['formData.gridAccount'] = user.gridAccount
-    }
-
-    if (user.district && !this.data.formData.district) {
-      nextData['formData.district'] = user.district
-    }
-
-    this.setData(nextData)
-
-    return true
-  },
-
-  formatDate(dateInput) {
-    const date = dateInput instanceof Date ? dateInput : new Date(dateInput)
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  },
-
-  onInputChange(e) {
-    const { field } = e.currentTarget.dataset
-
-    this.setData({
-      [`formData.${field}`]: e.detail.value
-    })
-  },
-
-  onDateChange(e) {
-    this.setData({
-      'formData.date': e.detail.value
-    })
-  },
-
-  onDistrictChange(e) {
-    const index = Number(e.detail.value)
-    this.setData({
-      'formData.district': this.data.districts[index] || ''
-    })
-  },
-
-  onProductChange(e) {
-    const index = Number(e.detail.value)
-    const product = this.data.products[index]
-
-    if (!product) {
-      return
-    }
-
-    this.setData({
-      productIndex: index,
-      'formData.businessName': product.name
-    })
-
-    this.calculateCommission()
-  },
-
-  calculateCommission() {
-    const { businessName } = this.data.formData
-    const estimatedCommission = businessName
-      ? commission.calculateCommission(businessName)
-      : 0
-
-    this.setData({ estimatedCommission })
-  },
-
-  chooseImage() {
-    const { attachments } = this.data.formData
-    const remainCount = 5 - attachments.length
-
-    if (remainCount <= 0) {
-      wx.showToast({
-        title: '最多只能上传5张图片',
-        icon: 'none'
-      })
-      return
-    }
-
-    wx.chooseMedia({
-      count: remainCount,
-      mediaType: ['image'],
-      sourceType: ['album', 'camera'],
-      success: (res) => {
-        const newAttachments = attachments.concat(res.tempFiles || [])
-        this.setData({
-          'formData.attachments': newAttachments
-        })
-      },
-      fail: (error) => {
-        console.error('选择图片失败：', error)
-        wx.showToast({
-          title: '选择图片失败',
-          icon: 'none'
-        })
-      }
-    })
-  },
-
-  previewImage(e) {
-    const { index } = e.currentTarget.dataset
-    const { attachments } = this.data.formData
-    const urls = attachments.map((item) => item.tempFilePath)
-
-    wx.previewImage({
-      current: urls[index],
-      urls
-    })
-  },
-
-  deleteImage(e) {
-    const { index } = e.currentTarget.dataset
-    const attachments = this.data.formData.attachments.slice()
-
-    wx.showModal({
-      title: '确认删除',
-      content: '确定要删除这张图片吗？',
-      success: (res) => {
-        if (!res.confirm) {
-          return
-        }
-
-        attachments.splice(index, 1)
-        this.setData({
-          'formData.attachments': attachments
-        })
-      }
-    })
-  },
-
-  normalizeDate(dateStr) {
-    if (!dateStr) {
-      return ''
-    }
-
-    const normalized = dateStr
-      .replace(/年/g, '-')
-      .replace(/月/g, '-')
-      .replace(/日/g, '')
-      .replace(/\//g, '-')
-      .trim()
-
-    const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-    if (!match) {
-      return ''
-    }
-
-    const [, year, month, day] = match
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
-  },
-
-  chooseImportFile() {
-    if (!this.data.canBatchImport) {
-      wx.showToast({
-        title: '当前角色无导入权限',
-        icon: 'none'
-      })
-      return
-    }
-
+  onCutoffChange(e) { this.setData({ cutoffDate: e.detail.value, preview: null }) },
+  onFinalizedChange(e) { this.setData({ finalized: e.detail.value, preview: null }) },
+  onEmployeeInput(e) { this.setData({ employeeId: e.detail.value }) },
+  chooseFile() {
     wx.chooseMessageFile({
-      count: 1,
-      type: 'file',
-      extension: ['xls', 'xlsx'],
-      success: (res) => {
-        const file = res.tempFiles && res.tempFiles[0]
-        if (!file) {
-          return
+      count: 1, type: 'file', extension: ['xls', 'xlsx'],
+      success: res => {
+        const file = res.tempFiles[0]
+        if (!/\.(xls|xlsx)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+          this.showError(new Error('请选择10MB以内的Excel文件')); return
         }
-
-        if (!/\.(xls|xlsx)$/i.test(file.name || '')) {
-          wx.showToast({
-            title: '请选择Excel文件',
-            icon: 'none'
-          })
-          return
-        }
-
-        this.setData({
-          importFile: file,
-          importResult: null
-        })
-      },
-      fail: (error) => {
-        if (error && error.errMsg && error.errMsg.includes('cancel')) {
-          return
-        }
-        console.error('选择Excel文件失败：', error)
-        wx.showToast({
-          title: '选择文件失败',
-          icon: 'none'
-        })
+        this.setData({ file, fileID: '', preview: null })
       }
     })
   },
-
-  clearImportFile() {
-    this.setData({
-      importFile: null,
-      importResult: null
-    })
+  metadata() {
+    return { businessMonth: this.data.businessMonth, cutoffDate: this.data.cutoffDate,
+      finalized: this.data.finalized, fileID: this.data.fileID,
+      fileName: this.data.file ? this.data.file.name : '' }
   },
-
-  async onBatchImport() {
-    if (!this.data.importFile) {
-      wx.showToast({
-        title: '请先选择Excel文件',
-        icon: 'none'
-      })
-      return
-    }
-
-    const user = await auth.ensureLoggedIn()
-    if (!user) {
-      this.showLoginRequiredModal()
-      return
-    }
-
-    if (!MANAGER_ROLES.includes(user.role)) {
-      wx.showToast({
-        title: '当前角色无导入权限',
-        icon: 'none'
-      })
-      return
-    }
-
-    this.setData({ importing: true })
-    wx.showLoading({
-      title: '导入中...'
-    })
-
+  async previewImport() {
+    if (this.data.busy) return
+    if (!this.data.file) { this.showError(new Error('请选择Excel文件')); return }
+    this.setData({ busy: true, importAction: 'preview', preview: null })
     try {
-      const file = this.data.importFile
-      const ext = (file.name || 'xlsx').split('.').pop()
-      const safeName = (file.name || `业务导入.${ext}`).replace(/[^\w.\-\u4e00-\u9fa5]/g, '_')
-      const uploadResult = await wx.cloud.uploadFile({
-        cloudPath: `business_imports/${Date.now()}_${safeName}`,
-        filePath: file.path
-      })
-
-      const importResponse = await wx.cloud.callFunction({
-        name: 'businessData',
-        data: {
-          action: 'batchImport',
-          data: {
-            fileID: uploadResult.fileID,
-            fileName: file.name || safeName
-          }
-        }
-      })
-
-      if (!importResponse.result || !importResponse.result.success) {
-        throw new Error((importResponse.result && importResponse.result.error) || '导入失败')
-      }
-
-      const result = importResponse.result.data
-      this.setData({
-        importResult: result,
-        importFile: null
-      })
-
-      wx.showToast({
-        title: `成功${result.successCount}条`,
-        icon: 'success'
-      })
-    } catch (error) {
-      console.error('批量导入失败：', error)
-      wx.showToast({
-        title: error.message || '导入失败',
-        icon: 'none'
-      })
-    } finally {
-      this.setData({ importing: false })
-      wx.hideLoading()
-    }
-  },
-
-  validateForm() {
-    const { formData } = this.data
-
-    if (!formData.date) {
-      wx.showToast({ title: '请选择日期', icon: 'none' })
-      return false
-    }
-
-    if (!formData.district) {
-      wx.showToast({ title: '请选择区县', icon: 'none' })
-      return false
-    }
-
-    if (!commission.getCommissionDetail(formData.businessName)) {
-      wx.showToast({ title: '请选择有效的业务名称', icon: 'none' })
-      return false
-    }
-
-    if (!formData.userPhone) {
-      wx.showToast({ title: '请输入用户号码', icon: 'none' })
-      return false
-    }
-
-    if (!/^1[3-9]\d{9}$/.test(formData.userPhone)) {
-      wx.showToast({ title: '请输入正确的手机号', icon: 'none' })
-      return false
-    }
-
-    if (!formData.gridAccount || !formData.gridAccount.trim()) {
-      wx.showToast({ title: '请输入发展人员网格通', icon: 'none' })
-      return false
-    }
-
-    return true
-  },
-
-  async uploadImages() {
-    const { attachments } = this.data.formData
-    if (!attachments.length) {
-      return []
-    }
-
-    try {
-      const uploadTasks = attachments.map((file, index) => {
-        const ext = (file.tempFilePath.split('.').pop() || 'jpg').toLowerCase()
-        const cloudPath = `business_images/${Date.now()}_${index}.${ext}`
-        return wx.cloud.uploadFile({
-          cloudPath,
-          filePath: file.tempFilePath
+      let fileID = this.data.fileID
+      if (!fileID) {
+        const upload = await wx.cloud.uploadFile({
+          cloudPath: 'sales_imports/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.xlsx',
+          filePath: this.data.file.path
         })
-      })
-
-      const results = await Promise.all(uploadTasks)
-      return results.map((item) => item.fileID)
-    } catch (error) {
-      console.error('上传图片失败：', error)
-      throw error
-    }
+        fileID = upload.fileID
+        this.setData({ fileID })
+      }
+      const preview = await callSales('importPreview', this.metadata())
+      this.setData({ preview })
+    } catch (error) { this.showError(error) } finally { this.setData({ busy: false, importAction: '' }) }
   },
-
-  async onSubmit() {
-    if (!this.validateForm()) {
+  async commitImport() {
+    if (this.data.busy || !this.data.preview || this.data.preview.errors.length) return
+    const decision = await new Promise(resolve => wx.showModal({
+      title: this.data.finalized ? '覆盖并定版' : '覆盖累计业务量',
+      content: this.data.businessMonth + '，' + this.data.preview.meta.districts.join('、') +
+        '：以本文件替换整月业务量，缺失员工原业务量将不再生效。统计截至' + this.data.cutoffDate +
+        (this.data.finalized ? '。请确认最终统计范围，定版后普通导入将被锁定。' : '。不是新增量累加。'),
+      success: resolve, fail: () => resolve({ confirm: false })
+    }))
+    if (!decision.confirm || this.data.busy || !this.data.preview) return
+    this.setData({ busy: true, importAction: 'publish' })
+    try {
+      const result = await callSales('importCommit', { ...this.metadata(), previewToken: this.data.preview.previewToken })
+      this.setData({ preview: null, file: null, fileID: '', finalized: false })
+      wx.showToast({ title: result.unchanged ? '数据相同，无需更新' : '发布成功', icon: 'success' })
+    } catch (error) {
+      this.setData({ preview: null })
+      this.showError(error)
+      if (error.code === 'SALES_FUNCTION_TIMEOUT') {
+        try { await this.loadBatches() } catch (refreshError) { console.error('发布超时后读取批次失败:', refreshError) }
+      }
       return
-    }
-
-    this.setData({ submitting: true })
-    wx.showLoading({
-      title: '提交中...'
-    })
-
+    } finally { this.setData({ busy: false, importAction: '' }) }
+    try { await this.loadBatches() } catch (error) { this.showError(new Error('发布已完成，但批次列表刷新失败，请重新进入页面查看。')) }
+  },
+  async loadBatches() {
+    const result = await callSales('getImportBatches')
+    this.setData({ batches: result.records, activeVersions: result.versions })
+  },
+  async reopenMonth(e) {
+    if (this.data.busy) return
+    const version = this.data.activeVersions[e.currentTarget.dataset.index]
+    const decision = await new Promise(resolve => wx.showModal({
+      title: '撤销定版：' + version.businessMonth + ' ' + version.district,
+      editable: true, placeholderText: '请输入更正原因', success: resolve, fail: () => resolve({})
+    }))
+    if (!decision.confirm || !String(decision.content || '').trim()) return
+    this.setData({ busy: true })
     try {
-      const user = await auth.ensureLoggedIn()
-      if (!user) {
-        this.showLoginRequiredModal()
-        return
-      }
-
-      storage.saveLastFormData(this.data.formData)
-
-      const imageUrls = await this.uploadImages()
-      const calculatedCommission = commission.calculateCommission(this.data.formData.businessName)
-      const submitResult = await wx.cloud.callFunction({
-        name: 'businessData',
-        data: {
-          action: 'create',
-          data: {
-            date: new Date(this.data.formData.date),
-            district: this.data.formData.district,
-            gridAccount: this.data.formData.gridAccount.trim(),
-            businessName: this.data.formData.businessName,
-            userPhone: this.data.formData.userPhone,
-            businessNumber: this.data.formData.userPhone,
-            attachments: imageUrls,
-            commission: calculatedCommission,
-            source: 'form'
-          }
-        }
-      })
-
-      if (!submitResult.result || !submitResult.result.success) {
-        throw new Error((submitResult.result && submitResult.result.error) || '提交失败')
-      }
-
-      wx.showToast({
-        title: '提交成功',
-        icon: 'success'
-      })
-
-      this.resetForm()
-    } catch (error) {
-      console.error('提交失败：', error)
-      wx.showToast({
-        title: '提交失败',
-        icon: 'none'
-      })
-    } finally {
-      this.setData({ submitting: false })
-      wx.hideLoading()
-    }
+      await callSales('reopenMonth', { ...version, reason: decision.content })
+      this.setData({ preview: null })
+      await this.loadBatches()
+    } catch (error) { this.showError(error) } finally { this.setData({ busy: false }) }
   },
-
-  resetForm() {
-    this.setData({
-      formData: {
-        date: this.formatDate(new Date()),
-        district: this.data.currentUserDistrict || '',
-        businessName: '',
-        userPhone: '',
-        gridAccount: this.data.currentUserGridAccount || '',
-        attachments: []
-      },
-      estimatedCommission: 0,
-      productIndex: 0,
-      importResult: this.data.importResult
-    })
+  async releaseClaim() {
+    if (this.data.busy || !this.data.employeeId.trim()) return
+    const decision = await new Promise(resolve => wx.showModal({
+      title: '解除该员工的微信认领',
+      editable: true, placeholderText: '请输入错误认领或换绑原因', success: resolve, fail: () => resolve({})
+    }))
+    if (!decision.confirm || !String(decision.content || '').trim()) return
+    this.setData({ busy: true })
+    try {
+      const response = await wx.cloud.callFunction({ name: 'userManagement', data: {
+        action: 'releaseSalesClaim', data: { employeeId: this.data.employeeId, reason: decision.content }
+      } })
+      if (!response.result || !response.result.success) throw new Error(response.result && response.result.error || '解除失败')
+      wx.showToast({ title: '已解除，可重新认领' })
+    } catch (error) { this.showError(error) } finally { this.setData({ busy: false }) }
   },
-
-  onReset() {
-    wx.showModal({
-      title: '确认重置',
-      content: '确定要清空当前表单内容吗？',
-      success: (res) => {
-        if (!res.confirm) {
-          return
-        }
-
-        this.resetForm()
-        wx.showToast({
-          title: '表单已重置',
-          icon: 'success'
-        })
-      }
-    })
+  async clearDistrictMonth(e) {
+    if (this.data.busy || !this.data.canMaintain) return
+    const version = this.data.activeVersions[e.currentTarget.dataset.index]
+    const decision = await new Promise(resolve => wx.showModal({
+      title: '清空：' + version.businessMonth + ' ' + version.district,
+      content: '仅用于该区县人员全部调出等更正。原版本与认领关系保留，请填写更正原因。',
+      editable: true, placeholderText: '更正原因', success: resolve, fail: () => resolve({})
+    }))
+    if (!decision.confirm || !String(decision.content || '').trim()) return
+    this.setData({ busy: true })
+    try {
+      await callSales('clearDistrictMonth', { ...version, reason: decision.content })
+      await this.loadBatches()
+      wx.showToast({ title: '已更正', icon: 'success' })
+    } catch (error) { this.showError(error) } finally { this.setData({ busy: false }) }
   }
 })

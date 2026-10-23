@@ -9,9 +9,9 @@ const FEEDBACK_CONTEXTS = {
     navTitle: '酬金反馈',
     sectionTitle: '提出反馈',
     historyTitle: '历史反馈',
-    pendingTitle: '待审批反馈',
-    monthFieldLabel: '反馈月份',
-    amountFieldLabel: '当月酬金',
+    pendingTitle: '待处理反馈',
+    monthFieldLabel: '业务月份',
+    amountFieldLabel: '该月业务预计总酬金',
     submitButtonText: '提交反馈',
     textareaPlaceholder: '请输入薪酬异议或疑问内容',
     recordTitleSuffix: '酬金反馈'
@@ -40,13 +40,11 @@ Page({
   data: {
     loading: false,
     submitting: false,
-    reviewing: false,
     resolvingId: '',
     updatingId: '',
     profileCompleted: false,
     handleMode: false,
     hasSubmittedThisMonth: false,
-    canApprove: false,
     canResolve: false,
     navTitle: FEEDBACK_CONTEXTS.sales.navTitle,
     sectionTitle: FEEDBACK_CONTEXTS.sales.sectionTitle,
@@ -63,6 +61,8 @@ Page({
     },
     monthLabel: getCurrentMonthLabel(),
     monthCommission: '0.00',
+    sourceBatchId: '',
+    dataError: '',
     feedbackForm: {
       content: '',
       workOrderIndex: 0
@@ -85,10 +85,10 @@ Page({
     const baseContext = isLineProject ? FEEDBACK_CONTEXTS.line_project : FEEDBACK_CONTEXTS.sales
     const monthLabel = String(options.salaryMonth || options.monthLabel || getCurrentMonthLabel()).trim() || getCurrentMonthLabel()
     const salaryAmount = Number(options.salaryAmount || 0)
-    const handleMode = isLineProject && options.mode === 'handle'
+    const handleMode = options.mode === 'handle'
 
     this.setData({
-      navTitle: handleMode ? '问题工单处理' : baseContext.navTitle,
+      navTitle: handleMode ? (isLineProject ? '问题工单处理' : '销售反馈处理') : baseContext.navTitle,
       sectionTitle: baseContext.sectionTitle,
       historyTitle: baseContext.historyTitle,
       pendingTitle: baseContext.pendingTitle,
@@ -110,7 +110,7 @@ Page({
   isProfileCompleted(user) {
     return !!user && !!(
       String(user.realName || '').trim() &&
-      String(user.gridAccount || '').trim() &&
+      String((user.workspaceType === 'sales' ? (user.salesClaimed && user.employeeId) : user.gridAccount) || '').trim() &&
       String(user.district || '').trim() &&
       String(user.gridName || '').trim()
     )
@@ -139,68 +139,18 @@ Page({
   },
 
   getStatusText(status) {
-    if (this.isLineProjectContext()) {
-      const statusMap = {
-        pending: '待处理人答复',
-        processing: '待处理人答复',
-        awaiting_submitter: '待您确认',
-        closed: '已解决',
-        resolved: '待您确认',
-        approved: '待您确认',
-        rejected: '待您确认'
-      }
-      return statusMap[status] || '待处理人答复'
-    }
-    const statusMap = {
-      pending: '待处理',
-      processing: '处理中',
-      approved: '已通过',
-      rejected: '已驳回',
-      not_required: '无需审批'
-    }
-
-    return statusMap[status] || '待处理'
+    return ({ pending: '待处理人答复', processing: '待处理人答复', awaiting_submitter: '待您确认',
+      closed: '已解决', resolved: '待您确认', approved: '待您确认', rejected: '待您确认' })[status] || '待处理人答复'
   },
 
   getStatusClass(status) {
-    if (this.isLineProjectContext()) {
-      if (status === 'closed') return 'status-approved'
-      if (['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(status)) return 'status-processing'
-      return 'status-pending'
-    }
-    const statusClassMap = {
-      pending: 'status-pending',
-      processing: 'status-processing',
-      approved: 'status-approved',
-      rejected: 'status-rejected',
-      not_required: 'status-pending'
-    }
-
-    return statusClassMap[status] || 'status-pending'
+    if (status === 'closed') return 'status-approved'
+    if (['awaiting_submitter', 'resolved', 'approved', 'rejected'].includes(status)) return 'status-processing'
+    return 'status-pending'
   },
 
-  getPendingRoleText(record) {
-    if (this.isLineProjectContext()) {
-      return '待处理问题工单'
-    }
-    if (record.pendingReviewType === 'manager') {
-      return '区县经理审批'
-    }
-
-    if (record.pendingReviewType === 'supervisor') {
-      return '基层监督员审批'
-    }
-
-    return '待审批'
-  },
-
-  getWaitingText(record = {}) {
-    const handlers = [
-      { review: record.managerReview || {}, roleText: '区县经理' },
-      { review: record.supervisorReview || {}, roleText: '基层监督员' }
-    ].filter(item => item.review.status === 'pending')
-      .map(item => `${item.review.name || item.review.gridAccount || item.roleText}（${item.roleText}）`)
-    return handlers.length ? `待${handlers.join('或')}反馈中` : '等待问题处理人反馈'
+  getWaitingText() {
+    return '等待本区县当前指定的经理或基层监督员答复'
   },
 
   getResolution(record = {}) {
@@ -275,7 +225,6 @@ Page({
   buildFeedbackList(records = []) {
     return records.map(record => {
       const resolution = this.getResolution(record)
-      const attachments = resolution && Array.isArray(resolution.attachments) ? resolution.attachments : []
       const messages = this.buildMessageList(record)
       return {
         ...record,
@@ -286,21 +235,10 @@ Page({
         isClosed: record.status === 'closed',
         recordTitle: this.buildRecordTitle(record),
         createTimeText: this.formatDateTime(record.createTime),
-        managerStatusText: this.getStatusText(record.managerReview && record.managerReview.status),
-        managerStatusClass: this.getStatusClass(record.managerReview && record.managerReview.status),
-        supervisorStatusText: this.getStatusText(record.supervisorReview && record.supervisorReview.status),
-        supervisorStatusClass: this.getStatusClass(record.supervisorReview && record.supervisorReview.status),
         statusText: this.getStatusText(record.status),
         statusClass: this.getStatusClass(record.status),
         salaryAmountText: this.formatMoney(record.salaryAmount),
-        pendingRoleText: this.getPendingRoleText(record),
-        waitingText: this.getWaitingText(record),
-        resolutionHandlerText: resolution
-          ? `${(resolution.handler && (resolution.handler.name || resolution.handler.realName || resolution.handler.gridAccount)) || '处理人'}（${resolution.handlerRoleText || '问题处理人'}）`
-          : '',
-        resolutionTimeText: resolution ? this.formatDateTime(resolution.resolveTime) : '',
-        resolutionFileIDs: attachments.map(item => typeof item === 'string' ? item : item.fileID).filter(Boolean),
-        resolutionImageUrls: [],
+        waitingText: this.getWaitingText(),
         responseText: '',
         selectedImages: [],
         followUpText: '',
@@ -310,10 +248,7 @@ Page({
   },
 
   async fillResolutionImageUrls(records = []) {
-    const fileIDs = [...new Set(records.flatMap(item => [
-      ...(item.resolutionFileIDs || []),
-      ...(item.messages || []).flatMap(message => message.fileIDs || [])
-    ]))]
+    const fileIDs = [...new Set(records.flatMap(item => (item.messages || []).flatMap(message => message.fileIDs || [])))]
     if (!fileIDs.length) return records
     const result = await wx.cloud.getTempFileURL({ fileList: fileIDs })
     const urlMap = {}
@@ -322,7 +257,6 @@ Page({
     })
     return records.map(item => ({
       ...item,
-      resolutionImageUrls: (item.resolutionFileIDs || []).map(fileID => urlMap[fileID]).filter(Boolean),
       messages: (item.messages || []).map(message => ({
         ...message,
         imageUrls: (message.fileIDs || []).map(fileID => urlMap[fileID]).filter(Boolean)
@@ -359,7 +293,7 @@ Page({
       name: 'salaryFeedback',
       data: {
         action,
-        data: payload
+        data: this.buildFeedbackPayload(payload)
       }
     })
 
@@ -371,28 +305,9 @@ Page({
   },
 
   async loadSalesSummary() {
-    const res = await wx.cloud.callFunction({
-      name: 'businessData',
-      data: {
-        action: 'list',
-        data: {
-          page: 1,
-          pageSize: 100,
-          filters: {},
-          sortBy: 'createTime',
-          sortOrder: 'desc'
-        }
-      }
-    })
-
-    if (!res.result || !res.result.success) {
-      throw new Error((res.result && res.result.error) || '薪酬数据加载失败')
-    }
-
-    const stats = (res.result.data && res.result.data.stats) || {}
-    this.setData({
-      monthCommission: this.formatMoney(stats.monthCommission)
-    })
+    this.setData({ sourceBatchId: '' })
+    const result = await this.callFeedbackFunction('getSalesContext', { salaryMonth: this.data.monthLabel })
+    this.setData({ monthCommission: this.formatMoney(result.salaryAmount), sourceBatchId: result.batchId })
   },
 
   async loadLineProjectSummary() {
@@ -429,7 +344,7 @@ Page({
   },
 
   async loadMyFeedbacks() {
-    const resultData = await this.callFeedbackFunction('listMine', this.buildFeedbackPayload())
+    const resultData = await this.callFeedbackFunction('listMine')
     const records = await this.fillResolutionImageUrls(this.buildFeedbackList(resultData.records || []))
     const monthlyLimitEnabled = !!resultData.monthlyLimitEnabled
     this.setData({
@@ -439,10 +354,9 @@ Page({
   },
 
   async loadPendingFeedbacks() {
-    const resultData = await this.callFeedbackFunction('listPending', this.buildFeedbackPayload())
+    const resultData = await this.callFeedbackFunction('listPending')
     const records = await this.fillResolutionImageUrls(this.buildFeedbackList(resultData.records || []))
     this.setData({
-      canApprove: !!resultData.canApprove,
       canResolve: !!resultData.canResolve,
       pendingFeedbacks: records
     })
@@ -457,7 +371,10 @@ Page({
       return true
     }
 
-    if (!workspace.isSalesWorkspace(user)) {
+    const lineHandler = this.data.handleMode && workspace.isLineProjectWorkspace(user) &&
+      (['district_manager', 'sales_department', 'system_admin'].includes(user.role) ||
+        (user.lineProjectRoles || []).some(role => ['district_manager', 'district_supervisor'].includes(role)))
+    if (!workspace.isSalesWorkspace(user) && !lineHandler) {
       workspace.denyWorkspaceAccess(user, workspace.WORKSPACE_TYPES.SALES)
       return false
     }
@@ -467,24 +384,25 @@ Page({
 
   async loadPageData() {
     try {
-      this.setData({ loading: true })
+      this.setData({ loading: true, dataError: '', sourceBatchId: '', pendingFeedbacks: [], myFeedbacks: [] })
 
-      const user = await auth.ensureLoggedIn()
-      if (!user) {
+      if (!await auth.ensureLoggedIn()) {
         this.redirectToLogin()
         return
       }
+      const user = await auth.getCurrentUserInfo()
 
       if (!this.ensureWorkspaceAccess(user)) {
         return
       }
 
-      const profileCompleted = this.isProfileCompleted(user)
+      const management = !this.isLineProjectContext() && (user.role !== 'sales_person' || this.data.handleMode && workspace.isLineProjectWorkspace(user))
+      if (management) this.setData({ handleMode: true, navTitle: '销售反馈处理' })
+      const profileCompleted = management || this.isProfileCompleted(user)
       this.setData({ profileCompleted })
 
       if (!profileCompleted) {
         this.setData({
-          canApprove: false,
           canResolve: false,
           hasSubmittedThisMonth: false,
           myFeedbacks: [],
@@ -505,6 +423,7 @@ Page({
       }
     } catch (error) {
       console.error('加载反馈页面失败:', error)
+      this.setData({ dataError: error.message || '加载失败，请重试' })
       wx.showToast({
         title: error.message || '加载失败',
         icon: 'none'
@@ -545,7 +464,7 @@ Page({
       this.setData({ submitting: true })
       await this.callFeedbackFunction('create', this.buildFeedbackPayload({
         salaryMonth: this.data.monthLabel,
-        salaryAmount: Number(this.data.monthCommission),
+        ...(this.isLineProjectContext() ? { salaryAmount: Number(this.data.monthCommission) } : { sourceBatchId: this.data.sourceBatchId }),
         relatedWorkOrderKey: (this.data.workOrderOptions[this.data.feedbackForm.workOrderIndex] || {}).workOrderKey || '',
         content
       }))
@@ -613,12 +532,6 @@ Page({
     wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
   },
 
-  previewHistoryImage(e) {
-    const record = this.data.myFeedbacks[Number(e.currentTarget.dataset.recordIndex)]
-    const urls = record ? record.resolutionImageUrls || [] : []
-    wx.previewImage({ current: urls[Number(e.currentTarget.dataset.imageIndex)], urls })
-  },
-
   previewMessageImage(e) {
     const list = e.currentTarget.dataset.source === 'pending'
       ? this.data.pendingFeedbacks
@@ -674,7 +587,7 @@ Page({
       const match = String(image.tempFilePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/)
       const ext = match ? match[1].toLowerCase() : 'jpg'
       const uploadResult = await wx.cloud.uploadFile({
-        cloudPath: `line_project_feedbacks/${record.salaryMonth}/${record._id}/${folder}_${Date.now()}_${imageIndex}.${ext}`,
+        cloudPath: `${this.isLineProjectContext() ? 'line_project_feedbacks' : 'sales_feedbacks'}/${record.salaryMonth}/${record._id}/${folder}_${Date.now()}_${imageIndex}.${ext}`,
         filePath: image.tempFilePath
       })
       fileIDs.push(uploadResult.fileID)
@@ -765,59 +678,6 @@ Page({
           wx.showToast({ title: error.message || '确认失败', icon: 'none' })
         } finally {
           this.setData({ updatingId: '' })
-        }
-      }
-    })
-  },
-
-  async reviewFeedback(e) {
-    if (this.data.reviewing) {
-      return
-    }
-
-    const { id, action } = e.currentTarget.dataset
-    const actionText = action === 'approved' ? '通过' : '驳回'
-
-    wx.showModal({
-      title: `确认${actionText}`,
-      content: '',
-      editable: true,
-      placeholderText: action === 'rejected' ? '请输入驳回原因（必填）' : '处理意见（选填）',
-      success: async res => {
-        if (!res.confirm) {
-          return
-        }
-
-        const reviewNote = String(res.content || '').trim()
-        if (action === 'rejected' && !reviewNote) {
-          wx.showToast({ title: '请填写驳回原因', icon: 'none' })
-          return
-        }
-
-        try {
-          this.setData({ reviewing: true })
-          await this.callFeedbackFunction('review', {
-            feedbackId: id,
-            action,
-            reviewNote
-          })
-
-          wx.showToast({
-            title: '审批完成',
-            icon: 'success'
-          })
-          await Promise.all([
-            this.loadMyFeedbacks(),
-            this.loadPendingFeedbacks()
-          ])
-        } catch (error) {
-          console.error('审批反馈失败:', error)
-          wx.showToast({
-            title: error.message || '审批失败',
-            icon: 'none'
-          })
-        } finally {
-          this.setData({ reviewing: false })
         }
       }
     })

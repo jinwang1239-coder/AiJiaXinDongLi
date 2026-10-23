@@ -3,6 +3,7 @@
     "pages/login/login",
     "pages/collect/collect",
     "pages/manage/manage",
+    "pages/summary/summary",
     "pages/line-project/index",
     "pages/line-project/import",
     "pages/line-project/salary-import",
@@ -30,8 +31,8 @@
         "text": "\u767B\u5F55"
       },
       {
-        "pagePath": "pages/collect/collect",
-        "text": "\u4FE1\u606F\u91C7\u96C6"
+        "pagePath": "pages/summary/summary",
+        "text": "业务汇总"
       },
       {
         "pagePath": "pages/manage/manage",

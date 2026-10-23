@@ -2,9 +2,10 @@
 
 <scroll-view class="page-container" scroll-y type="list">
   <view class="feedback-container">
+    <view wx:if="{{dataError}}" class="card">{{dataError}}<button size="mini" bindtap="loadPageData">重新加载</button></view>
     <view wx:if="{{!handleMode}}" class="card submit-card">
       <view class="section-title">{{sectionTitle}}</view>
-      <view wx:if="{{profileCompleted}}" class="summary-block">
+      <view wx:if="{{profileCompleted && (feedbackContext.workspaceType === 'line_project' || sourceBatchId)}}" class="summary-block">
         <view class="summary-row">
           <text class="summary-label">{{monthFieldLabel}}</text>
           <text class="summary-value">{{monthLabel}}</text>
@@ -24,10 +25,10 @@
         <textarea class="form-textarea" disabled="{{hasSubmittedThisMonth}}" placeholder="{{textareaPlaceholder}}" maxlength="500" value="{{feedbackForm.content}}" bindinput="onContentInput" />
       </view>
 
-      <view wx:if="{{!profileCompleted}}" class="notice-block">请先完善姓名、网格通账号、区县和所属网格后再提交反馈。</view>
+      <view wx:if="{{!profileCompleted}}" class="notice-block">{{feedbackContext.workspaceType === 'sales' ? '请先认领员工编号后再提交反馈。' : '请先完善个人资料后再提交反馈。'}}</view>
       <view wx:elif="{{hasSubmittedThisMonth}}" class="notice-block">本月已提交过反馈，请勿重复提交</view>
 
-      <button class="primary-btn {{hasSubmittedThisMonth ? 'primary-btn-disabled' : ''}}" bindtap="submitFeedback" loading="{{submitting}}" disabled="{{!profileCompleted}}">{{submitButtonText}}</button>
+      <button class="primary-btn {{hasSubmittedThisMonth ? 'primary-btn-disabled' : ''}}" bindtap="submitFeedback" loading="{{submitting}}" disabled="{{loading || dataError || !profileCompleted || (feedbackContext.workspaceType === 'sales' && !sourceBatchId)}}">{{submitButtonText}}</button>
     </view>
 
     <view wx:if="{{!handleMode}}" class="card history-card">
@@ -40,61 +41,46 @@
           </view>
           <view class="item-meta">{{amountFieldLabel}}：￥{{item.salaryAmountText}}</view>
           <view wx:if="{{item.relatedWorkOrder}}" class="item-meta">关联工单：{{item.relatedWorkOrder.subCategory}} · {{item.relatedWorkOrder.workOrderCode || item.relatedWorkOrder.workOrderSubject}}</view>
-          <view wx:if="{{feedbackContext.workspaceType !== 'line_project'}}" class="item-content">{{item.content}}</view>
 
-          <block wx:if="{{feedbackContext.workspaceType === 'line_project'}}">
-            <view class="conversation-list">
-              <view wx:for="{{item.messages}}" wx:for-item="message" wx:for-index="messageIndex" wx:key="messageKey" class="conversation-message {{message.messageClass}}">
-                <view class="conversation-header">
-                  <view class="conversation-title">{{message.title}}</view>
-                  <view class="conversation-round">第{{message.roundNo}}轮</view>
-                </view>
-                <view wx:if="{{message.content}}" class="item-content">{{message.content}}</view>
-                <view wx:if="{{message.imageUrls.length}}" class="image-grid">
-                  <image wx:for="{{message.imageUrls}}" wx:for-item="imageUrl" wx:for-index="imageIndex" wx:key="*this" class="feedback-image" src="{{imageUrl}}" mode="aspectFill" data-source="mine" data-record-index="{{recordIndex}}" data-message-index="{{messageIndex}}" data-image-index="{{imageIndex}}" bindtap="previewMessageImage" />
-                </view>
-                <view class="item-time">{{message.timeText}}</view>
+          <view class="conversation-list">
+            <view wx:for="{{item.messages}}" wx:for-item="message" wx:for-index="messageIndex" wx:key="messageKey" class="conversation-message {{message.messageClass}}">
+              <view class="conversation-header">
+                <view class="conversation-title">{{message.title}}</view>
+                <view class="conversation-round">第{{message.roundNo}}轮</view>
               </view>
-            </view>
-            <view wx:if="{{item.isPending}}" class="pending-message">{{item.waitingText}}</view>
-            <view wx:if="{{item.isAwaitingSubmitter}}" class="follow-up-block">
-              <view class="form-label">处理人员已答复，请确认问题是否解决</view>
-              <textarea class="form-textarea response-textarea" placeholder="如仍有疑问，请填写补充问题" maxlength="500" value="{{item.followUpText}}" data-index="{{recordIndex}}" bindinput="onFollowUpInput" />
-              <view class="form-label response-label">图片附件（选填，最多5张）</view>
-              <view class="image-grid">
-                <view wx:for="{{item.followUpImages}}" wx:for-item="image" wx:for-index="imageIndex" wx:key="tempFilePath" class="image-item">
-                  <image class="feedback-image" src="{{image.tempFilePath}}" mode="aspectFill" data-record-index="{{recordIndex}}" data-image-index="{{imageIndex}}" bindtap="previewFollowUpImage" />
-                  <view class="image-remove" data-record-index="{{recordIndex}}" data-image-index="{{imageIndex}}" catchtap="removeFollowUpImage">×</view>
-                </view>
-                <button wx:if="{{item.followUpImages.length < 5}}" class="image-add" data-index="{{recordIndex}}" bindtap="chooseFollowUpImages">＋</button>
+              <view wx:if="{{message.content}}" class="item-content">{{message.content}}</view>
+              <view wx:if="{{message.imageUrls.length}}" class="image-grid">
+                <image wx:for="{{message.imageUrls}}" wx:for-item="imageUrl" wx:for-index="imageIndex" wx:key="*this" class="feedback-image" src="{{imageUrl}}" mode="aspectFill" data-source="mine" data-record-index="{{recordIndex}}" data-message-index="{{messageIndex}}" data-image-index="{{imageIndex}}" bindtap="previewMessageImage" />
               </view>
-              <view class="action-row">
-                <button class="action-btn action-btn-ghost" data-index="{{recordIndex}}" bindtap="submitFollowUp" loading="{{updatingId === item._id}}">继续反馈</button>
-                <button class="action-btn" data-index="{{recordIndex}}" bindtap="confirmFeedbackResolved" loading="{{updatingId === item._id}}">确认已解决</button>
-              </view>
-            </view>
-            <view wx:if="{{item.isClosed}}" class="closed-message">问题已由您确认解决</view>
-          </block>
-
-          <view wx:else class="review-grid">
-            <view class="review-item">
-              <view class="review-label">区县经理</view>
-              <view class="status-tag small {{item.managerStatusClass}}">{{item.managerStatusText}}</view>
-              <view wx:if="{{item.managerReview.reviewNote}}" class="item-meta">{{item.managerReview.reviewNote}}</view>
-            </view>
-            <view class="review-item">
-              <view class="review-label">基层监督员</view>
-              <view class="status-tag small {{item.supervisorStatusClass}}">{{item.supervisorStatusText}}</view>
-              <view wx:if="{{item.supervisorReview.reviewNote}}" class="item-meta">{{item.supervisorReview.reviewNote}}</view>
+              <view class="item-time">{{message.timeText}}</view>
             </view>
           </view>
+          <view wx:if="{{item.isPending}}" class="pending-message">{{item.waitingText}}</view>
+          <view wx:if="{{item.isAwaitingSubmitter}}" class="follow-up-block">
+            <view class="form-label">处理人员已答复，请确认问题是否解决</view>
+            <textarea class="form-textarea response-textarea" placeholder="如仍有疑问，请填写补充问题" maxlength="500" value="{{item.followUpText}}" data-index="{{recordIndex}}" bindinput="onFollowUpInput" />
+            <view class="form-label response-label">图片附件（选填，最多5张）</view>
+            <view class="image-grid">
+              <view wx:for="{{item.followUpImages}}" wx:for-item="image" wx:for-index="imageIndex" wx:key="tempFilePath" class="image-item">
+                <image class="feedback-image" src="{{image.tempFilePath}}" mode="aspectFill" data-record-index="{{recordIndex}}" data-image-index="{{imageIndex}}" bindtap="previewFollowUpImage" />
+                <view class="image-remove" data-record-index="{{recordIndex}}" data-image-index="{{imageIndex}}" catchtap="removeFollowUpImage">×</view>
+              </view>
+              <button wx:if="{{item.followUpImages.length < 5}}" class="image-add" data-index="{{recordIndex}}" bindtap="chooseFollowUpImages">＋</button>
+            </view>
+            <view class="action-row">
+              <button class="action-btn action-btn-ghost" data-index="{{recordIndex}}" bindtap="submitFollowUp" loading="{{updatingId === item._id}}">继续反馈</button>
+              <button class="action-btn" data-index="{{recordIndex}}" bindtap="confirmFeedbackResolved" loading="{{updatingId === item._id}}">确认已解决</button>
+            </view>
+          </view>
+          <view wx:if="{{item.isClosed}}" class="closed-message">问题已由您确认解决</view>
+
           <view class="item-time">提交时间：{{item.createTimeText}}</view>
         </view>
       </view>
       <view wx:else class="empty-text">暂无反馈记录</view>
     </view>
 
-    <view wx:if="{{feedbackContext.workspaceType === 'line_project' && canResolve}}" class="card pending-card">
+    <view wx:if="{{canResolve}}" class="card pending-card">
       <view class="section-title">{{pendingTitle}}</view>
       <view wx:if="{{pendingFeedbacks.length > 0}}" class="list-block">
         <view wx:for="{{pendingFeedbacks}}" wx:for-index="recordIndex" wx:key="_id" class="feedback-item">
@@ -102,7 +88,7 @@
             <view class="item-title">{{item.submitter.name}} · {{item.salaryMonth}}</view>
             <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
           </view>
-          <view class="item-meta">{{item.district}} · {{item.submitter.gridAccount}} · ￥{{item.salaryAmountText}}</view>
+          <view class="item-meta">{{item.district}} · {{item.submitter.employeeId || item.submitter.gridAccount}} · ￥{{item.salaryAmountText}}</view>
           <view wx:if="{{item.relatedWorkOrder}}" class="item-meta">关联工单：{{item.relatedWorkOrder.subCategory}} · {{item.relatedWorkOrder.workOrderCode || item.relatedWorkOrder.workOrderSubject}}</view>
           <view class="conversation-list">
             <view wx:for="{{item.messages}}" wx:for-item="message" wx:for-index="messageIndex" wx:key="messageKey" class="conversation-message {{message.messageClass}}">
@@ -132,25 +118,6 @@
         </view>
       </view>
       <view wx:else class="empty-text">暂无待处理问题工单</view>
-    </view>
-
-    <view wx:elif="{{feedbackContext.workspaceType !== 'line_project' && canApprove}}" class="card pending-card">
-      <view class="section-title">{{pendingTitle}}</view>
-      <view wx:if="{{pendingFeedbacks.length > 0}}" class="list-block">
-        <view wx:for="{{pendingFeedbacks}}" wx:key="_id" class="feedback-item">
-          <view class="item-header">
-            <view class="item-title">{{item.pendingRoleText}}</view>
-            <view class="status-tag {{item.statusClass}}">{{item.statusText}}</view>
-          </view>
-          <view class="item-meta">{{item.submitter.name}} · {{item.district}} · {{item.salaryMonth}}</view>
-          <view class="item-content">{{item.content}}</view>
-          <view class="action-row">
-            <button class="action-btn action-btn-ghost" data-id="{{item._id}}" data-action="rejected" bindtap="reviewFeedback" loading="{{reviewing}}">驳回</button>
-            <button class="action-btn" data-id="{{item._id}}" data-action="approved" bindtap="reviewFeedback" loading="{{reviewing}}">通过</button>
-          </view>
-        </view>
-      </view>
-      <view wx:else class="empty-text">暂无待审批反馈</view>
     </view>
 
     <view wx:elif="{{handleMode}}" class="card pending-card">

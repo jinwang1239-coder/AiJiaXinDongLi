@@ -118,6 +118,7 @@
       </view>
 
       <button wx:if="{{canResolveFeedback}}" class="btn btn-primary management-detail-btn" bindtap="navigateToFeedbackHandling">进入问题工单处理</button>
+      <button wx:if="{{canHandleSalesFeedback}}" class="btn btn-secondary management-detail-btn" bindtap="navigateToSalesFeedbackHandling">销售酬金反馈处理</button>
 
       <view wx:if="{{managedFeedbacks.length}}" class="admin-feedback-list">
         <view class="admin-feedback-item" wx:for="{{managedFeedbacks}}" wx:for-index="feedbackIndex" wx:key="_id">

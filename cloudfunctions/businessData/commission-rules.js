@@ -1,14 +1,38 @@
 const SETTLEMENT_MONTHS = [1, 2, 3, 4, 5]
 
 const PRODUCTS = [
-  { name: '家庭宽带', commission: { T1: 15, T2: 15, T3: 15, T4: 15, total: 60 } },
-  { name: '全光组网', commission: { T1: 13, T2: 13, T3: 13, T4: 13, T5: 13, total: 65 } },
-  { name: '智能组网', commission: { T1: 6, T2: 6, T3: 6, T4: 6, T5: 6, total: 30 } },
-  { name: '家庭安防', commission: { T1: 6, T2: 6, T3: 6, T4: 6, T5: 6, total: 30 } },
-  { name: '移动高清', commission: { T1: 4, T2: 4, T3: 4, T4: 4, T5: 4, total: 20 } },
-  { name: 'HDICT', commission: { T2: 59, total: 59 } },
-  { name: '号卡', commission: { T1: 5, T2: 5, total: 10 } },
-  { name: '企业宽带', commission: { T2: 18, T3: 18, total: 36 } }
+  {
+    name: '家庭宽带',
+    commission: { T1: 15, T2: 15, T3: 15, T4: 15, total: 60 }
+  },
+  {
+    name: '全光组网',
+    commission: { T1: 13, T2: 13, T3: 13, T4: 13, T5: 13, total: 65 }
+  },
+  {
+    name: '智能组网',
+    commission: { T1: 6, T2: 6, T3: 6, T4: 6, T5: 6, total: 30 }
+  },
+  {
+    name: '家庭安防',
+    commission: { T1: 6, T2: 6, T3: 6, T4: 6, T5: 6, total: 30 }
+  },
+  {
+    name: '移动高清',
+    commission: { T1: 4, T2: 4, T3: 4, T4: 4, T5: 4, total: 20 }
+  },
+  {
+    name: 'HDICT',
+    commission: { T2: 59, total: 59 }
+  },
+  {
+    name: '号卡',
+    commission: { T1: 5, T2: 5, total: 10 }
+  },
+  {
+    name: '企业宽带',
+    commission: { T2: 18, T3: 18, total: 36 }
+  }
 ].map(product => ({
   ...product,
   category: '',

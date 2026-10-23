@@ -1,160 +1,62 @@
-<!-- pages/collect/collect.wxml -->
-<navigation-bar title="业务信息录入" back="{{false}}" color="black" background="#FFF"></navigation-bar>
-
-<scroll-view class="page-container" scroll-y type="list">
-  <view class="collect-container">
-    <view wx:if="{{canBatchImport}}" class="card import-card">
-      <view class="card-header">
-        <view class="card-title">区县主管批量导入</view>
+<navigation-bar title="销售业务量导入" back="{{true}}" color="black" background="#FFF"></navigation-bar>
+<scroll-view class="page-container" scroll-y>
+  <view class="collect-container" wx:if="{{canImport || canMaintain}}">
+    <view class="card" wx:if="{{canImport && !maintenanceOnly}}">
+      <view class="card-title">月度累计业务量</view>
+      <view class="form-group">
+        <label>业务月份（T月）</label>
+        <picker mode="date" fields="month" value="{{businessMonth}}" bindchange="onMonthChange" disabled="{{busy}}">
+          <view class="form-picker">{{businessMonth}}</view>
+        </picker>
       </view>
-
-      <view class="import-tips">
-        Excel模板字段：{{importTemplateText}}
+      <view class="form-group">
+        <label>统计截止日期</label>
+        <picker mode="date" value="{{cutoffDate}}" bindchange="onCutoffChange" disabled="{{busy}}">
+          <view class="form-picker">{{cutoffDate}}</view>
+        </picker>
       </view>
-
-      <view wx:if="{{importFile}}" class="import-file">
-        <view class="import-file-name">{{importFile.name}}</view>
-        <view class="import-file-clear" bindtap="clearImportFile">移除</view>
-      </view>
-
+      <view class="form-group">本次为最终数据 <switch checked="{{finalized}}" bindchange="onFinalizedChange" disabled="{{busy}}" /></view>
+      <view class="import-tips">表头：区县、网格名称、装维人员姓名、员工编号及8类业务数量。数量空白按0，员工编号须为文本。</view>
+      <button class="btn btn-secondary" bindtap="chooseFile" disabled="{{busy}}">{{file ? file.name : '选择Excel'}}</button>
       <view class="import-actions">
-        <button class="btn btn-secondary import-btn" bindtap="chooseImportFile">选择Excel</button>
-        <button
-          class="btn btn-primary import-btn"
-          bindtap="onBatchImport"
-          loading="{{importing}}"
-          disabled="{{!importFile || importing}}"
-        >
-          开始导入
-        </button>
-      </view>
-
-      <view wx:if="{{importResult}}" class="import-result">
-        <view class="import-result-title">导入结果</view>
-        <view class="import-result-summary">
-          共{{importResult.total}}条，成功{{importResult.successCount}}条，失败{{importResult.failCount}}条
-        </view>
-        <view wx:if="{{importResult.failedRows && importResult.failedRows.length > 0}}" class="import-errors">
-          <view wx:for="{{importResult.failedRows}}" wx:key="rowNumber" class="import-error-item">
-            <view class="import-error-row">第{{item.rowNumber}}行：{{item.businessName || '未填写业务名称'}}</view>
-            <view wx:for="{{item.errors}}" wx:for-item="error" wx:key="*this" class="import-error-text">{{error}}</view>
-          </view>
-        </view>
+        <button class="btn btn-secondary" bindtap="previewImport" loading="{{importAction === 'preview'}}" disabled="{{busy || !file}}">校验与预览</button>
+        <button class="btn btn-primary" bindtap="commitImport" loading="{{importAction === 'publish'}}" disabled="{{busy || !preview || preview.errors.length > 0}}">确认覆盖并发布{{finalized ? '、定版' : ''}}</button>
       </view>
     </view>
-
-    <view class="card form-card">
-      <view class="card-header">
-        <view class="card-title">业务信息表单</view>
-        <view wx:if="{{estimatedCommission > 0}}" class="commission-preview">
-          预计酬金：<text class="commission-amount">￥{{estimatedCommission}}</text>
-        </view>
+    <view class="card" wx:if="{{preview}}">
+      <view class="card-title">校验结果</view>
+      <view>自动识别区县：{{preview.meta.districts}}</view>
+      <view class="import-tips">仅覆盖以上区县；文件未包含的区县保持原数据。</view>
+      <view wx:if="{{preview.unchanged}}">数据与当前版本完全一致，发布不会重复更新参与率。</view>
+      <view>员工{{preview.totalEmployees}}人，业务{{preview.totalQuantity}}笔，总酬金￥{{preview.totalCommission}}</view>
+      <view class="import-tips" wx:if="{{!preview.errorCount && !preview.differenceCount}}">校验通过，无需逐条核对的问题，可确认覆盖并发布。</view>
+      <view class="error-item" wx:if="{{preview.errorCount}}">共{{preview.errorCount}}行校验错误，须修正后重新校验（最多展示100行）：</view>
+      <view class="error-item" wx:for="{{preview.errors}}" wx:key="index">第{{item.rowNumber}}行 {{item.employeeId}}：{{item.errors}}</view>
+      <view class="import-tips" wx:if="{{preview.differenceCount}}">共{{preview.differenceCount}}人存在覆盖提醒，请核对后再发布；提醒不阻止发布（最多展示100人）：</view>
+      <view class="preview-row" wx:for="{{preview.differences}}" wx:key="employeeId">
+        <view>{{item.employeeId}} {{item.realName}}：{{item.missing ? '文件缺失，将移除原业务量' : '总业务量或酬金减少，请核对'}}</view>
+        <view>{{item.previousQuantity}}→{{item.quantity}}笔，￥{{item.previousCommission}}→￥{{item.commission}}</view>
       </view>
-
-      <form>
-        <view class="form-group">
-          <label class="form-label">业务日期 *</label>
-          <picker mode="date" value="{{formData.date}}" bindchange="onDateChange">
-            <view class="form-picker">
-              <text wx:if="{{formData.date}}">{{formData.date}}</text>
-              <text wx:else class="placeholder">请选择日期</text>
-            </view>
-          </picker>
-        </view>
-
-        <view class="form-group">
-          <label class="form-label">区县 *</label>
-          <picker range="{{districts}}" bindchange="onDistrictChange">
-            <view class="form-picker">
-              <text wx:if="{{formData.district}}">{{formData.district}}</text>
-              <text wx:else class="placeholder">请选择区县</text>
-            </view>
-          </picker>
-        </view>
-
-        <view class="form-group">
-          <label class="form-label">业务名称 *</label>
-
-          <picker
-            range="{{products}}"
-            range-key="name"
-            value="{{productIndex}}"
-            bindchange="onProductChange"
-          >
-            <view class="form-picker">
-              <text wx:if="{{formData.businessName}}">
-                {{formData.businessName}}
-              </text>
-              <text wx:else class="placeholder">请选择业务名称</text>
-            </view>
-          </picker>
-        </view>
-
-        <view class="form-group">
-          <label class="form-label">用户号码 *</label>
-          <input
-            class="form-input"
-            type="number"
-            maxlength="11"
-            placeholder="{{phonePlaceholder}}"
-            placeholder-class="form-input-placeholder"
-            value="{{formData.userPhone}}"
-            data-field="userPhone"
-            bindinput="onInputChange"
-          />
-        </view>
-
-        <view class="form-group">
-          <label class="form-label">发展人员网格通 *</label>
-          <input
-            class="form-input"
-            placeholder="{{gridAccountPlaceholder}}"
-            placeholder-class="form-input-placeholder"
-            value="{{formData.gridAccount}}"
-            data-field="gridAccount"
-            bindinput="onInputChange"
-          />
-        </view>
-
-        <view class="form-group">
-          <label class="form-label">业务办理截图（选填）</label>
-          <view class="image-upload-container">
-            <view class="image-list">
-              <view
-                wx:for="{{formData.attachments}}"
-                wx:key="index"
-                class="image-item"
-                data-index="{{index}}"
-                bindtap="previewImage"
-              >
-                <image src="{{item.tempFilePath}}" mode="aspectFill" class="uploaded-image"></image>
-                <view class="image-delete" data-index="{{index}}" bindtap="deleteImage" catchtap="true">
-                  <text>×</text>
-                </view>
-              </view>
-
-              <view wx:if="{{formData.attachments.length < 5}}" class="image-upload-btn" bindtap="chooseImage">
-                <view class="upload-icon">+</view>
-                <view class="upload-text">添加图片</view>
-              </view>
-            </view>
-            <view class="upload-tips">最多可上传5张图片，支持相册和相机选择。</view>
-          </view>
-        </view>
-      </form>
     </view>
-
-    <view class="action-buttons">
-      <button class="btn btn-secondary reset-btn" bindtap="onReset">重置表单</button>
-      <button
-        class="btn btn-primary submit-btn"
-        bindtap="onSubmit"
-        loading="{{submitting}}"
-        disabled="{{submitting}}"
-      >
-        <text wx:if="{{!submitting}}">提交信息</text>
-        <text wx:else>提交中...</text>
-      </button>
+    <view class="card">
+      <view class="card-title">区县数据维护</view>
+      <view class="preview-row" wx:for="{{activeVersions}}" wx:key="_id">
+        {{item.businessMonth}} {{item.district}} · {{item.finalized ? '已定版' : '更新中'}} · 截至{{item.cutoffDate}}
+        <button wx:if="{{canImport && item.finalized}}" size="mini" data-index="{{index}}" bindtap="reopenMonth" disabled="{{busy}}">撤销定版</button>
+        <button wx:if="{{canMaintain && !item.finalized}}" size="mini" data-index="{{index}}" bindtap="clearDistrictMonth" disabled="{{busy}}">更正：清空本区县当月数据</button>
+      </view>
+    </view>
+    <view class="card">
+      <view class="card-title">最近导入批次</view>
+      <view class="preview-row" wx:for="{{batches}}" wx:key="_id">
+        {{item.businessMonth}} {{item.districts}} · 截至{{item.cutoffDate}} · {{item.totalEmployees}}人 / {{item.totalQuantity}}笔
+      </view>
+    </view>
+    <view class="card">
+      <view class="card-title">认领更正</view>
+      <input class="form-input" value="{{employeeId}}" bindinput="onEmployeeInput" placeholder="需要解除认领的员工编号" />
+      <button class="btn btn-secondary" bindtap="releaseClaim" disabled="{{busy}}">解除错误认领</button>
     </view>
   </view>
+  <view class="card" wx:else>仅指定导入人员或系统管理员可访问。</view>
 </scroll-view>
