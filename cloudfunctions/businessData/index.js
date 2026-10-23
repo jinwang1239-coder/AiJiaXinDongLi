@@ -20,7 +20,7 @@ async function optionalDoc(collection, id, source = db) {
   }
 }
 const versionId = (month, district) => core.hash(month + '|' + district)
-const summary = require('./sales-summary')(db, { all, optionalDoc, activeRows, versionId })
+const summary = require('./sales-summary')(db, { all, optionalDoc, activeRows, versionsFor, versionId })
 async function currentUser() {
   const { OPENID } = cloud.getWXContext()
   const result = await db.collection('users').where({ openid: OPENID }).limit(2).get()
@@ -31,7 +31,7 @@ async function currentUser() {
   return user
 }
 function requireImporter(user) {
-  if (!core.canImport(user)) throw new Error('仅指定销售业务部管理人员可导入和定版')
+  if (!core.canImport(user)) throw new Error('仅指定市场营销部管理人员可导入和定版')
 }
 async function versionsFor(user, businessMonth = '') {
   let query = db.collection(C.versions)
@@ -288,9 +288,11 @@ exports.main = async (event = {}) => {
     const user = await currentUser(), data = event.data || {}
     let result
     switch (event.action) {
-      case 'getAccess': result = { role: user.role, canImport: core.canImport(user), canMaintain: user.role === 'system_admin' }; break
+      case 'getAccess': result = { role: user.role, canImport: core.canImport(user), canMaintain: user.role === 'system_admin',
+        canExportParticipation: summary.canExportParticipation(user) }; break
       case 'getSummary': result = await summary.getSummary(user, data); break
       case 'recordReceipt': result = await summary.recordReceipt(user, data); break
+      case 'exportParticipation': result = await summary.exportParticipation(user, data); break
       case 'importPreview': result = previewResult(await prepare(user, data)); break
       case 'importCommit': result = await commit(user, data); break
       case 'reopenMonth': result = await reopen(user, data); break

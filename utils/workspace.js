@@ -9,7 +9,7 @@ const PREFERRED_WORKSPACE_KEY = 'preferredWorkspaceType'
 const SALES_ROLE_TEXT = {
   sales_person: '爱家工程师',
   district_manager: '区县主管',
-  sales_department: '销售业务部',
+  sales_department: '市场营销部',
   system_admin: '系统管理员'
 }
 

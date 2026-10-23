@@ -25,7 +25,7 @@
           <input class="form-input" placeholder="请输入已导入的员工编号" value="{{profileForm.employeeId}}" disabled="{{claimed}}" data-field="employeeId" bindinput="onInputChange" />
         </view>
         <view wx:if="{{claimed}}">{{profileForm.realName}} / {{profileForm.district}} / {{profileForm.gridName}}</view>
-        <view>一次认领后自动关联后续业务量。编号更正请联系销售业务部。</view>
+        <view>一次认领后自动关联后续业务量。编号更正请联系市场营销部。</view>
       </block>
       <block wx:else>
       <view class="form-group">

@@ -1,5 +1,11 @@
 <view class="receipt-card" wx:if="{{value}}">
-  <view class="title">{{scopeLabel}}员工数据接收情况</view>
+  <view class="title-row">
+    <view class="title">{{scopeLabel}}员工数据接收情况</view>
+    <button wx:if="{{canExport}}" class="export-btn" size="mini" bindtap="onExport" loading="{{exporting}}" disabled="{{exporting}}">{{exporting ? '正在导出' : '导出接收明细'}}</button>
+  </view>
+  <picker wx:if="{{canExport}}" mode="selector" range="{{exportScopes}}" value="{{exportScopeIndex}}" disabled="{{exporting}}" bindchange="onExportScopeChange">
+    <view class="export-scope">导出范围：{{exportScopes[exportScopeIndex]}} ▾</view>
+  </picker>
   <view class="stats-grid">
     <view>应接收<view class="number">{{value.expected}}人</view></view>
     <view>已接收<view class="number">{{value.received}}人</view></view>

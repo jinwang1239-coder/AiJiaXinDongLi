@@ -34,7 +34,7 @@ module.exports = db => {
         version.businessMonth === row.businessMonth && version.district === row.district))
         .sort((a, b) => b.businessMonth.localeCompare(a.businessMonth))
       profile = active[0]
-      if (!profile) throw new Error('该员工编号尚无已发布数据，请联系销售业务部导入')
+      if (!profile) throw new Error('该员工编号尚无已发布数据，请联系市场营销部导入')
       activeVersion = versions.find(version => version.activeBatchId === profile.importBatchId && version.district === profile.district)
     }
     const now = new Date()
@@ -59,7 +59,7 @@ module.exports = db => {
     })
     return { ...user, ...identity, salesClaimed: true, profileCompleted: true }
   }
-  // 换绑是后台维护操作，必须由已授权销售业务部人员指定目标微信账号和原因。
+  // 换绑是后台维护操作，必须由已授权市场营销部人员指定目标微信账号和原因。
   async function release(operator, data) {
     if (!canRelease(operator)) throw new Error('没有更正认领权限')
     const employeeId = normalizeId(data.employeeId), reason = String(data.reason || '').trim()

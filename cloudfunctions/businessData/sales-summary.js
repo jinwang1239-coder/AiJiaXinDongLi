@@ -1,8 +1,18 @@
 const core = require('./sales-core')
 const RECEIPTS = 'sales_data_receipts'
 
-module.exports = (db, { all, optionalDoc, activeRows, versionId }) => {
+module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) => {
   const percentage = (received, expected) => expected ? (received * 100 / expected).toFixed(1) + '%' : '—'
+  const canExportParticipation = user => user.status !== 'inactive' && (user.role === 'system_admin' ||
+    user.workspaceType === 'sales' && user.role === 'sales_department')
+
+  function filters(data) {
+    const businessMonth = String(data.businessMonth || core.monthNow())
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(businessMonth)) throw new Error('请选择有效业务月份')
+    const district = String(data.district || '')
+    if (district && !core.DISTRICTS.includes(district)) throw new Error('区县无效')
+    return { businessMonth, district }
+  }
 
   async function participation(rows, versions, businessMonth, district) {
     const receipts = []
@@ -18,25 +28,32 @@ module.exports = (db, { all, optionalDoc, activeRows, versionId }) => {
     const managers = await all(db.collection('users').where({ role: db.command.in(['district_manager', 'sales_department', 'system_admin']) }))
     const managementIds = new Set(managers.filter(user => user.employeeId &&
       (!bindings.has(user.employeeId) || bindings.get(user.employeeId) === user.openid)).map(user => user.employeeId))
+    const people = []
     const districts = (district ? [district] : core.DISTRICTS).map(name => {
       const version = versions.find(item => item.district === name)
-      const expectedIds = new Set(rows.filter(row => row.district === name && !managementIds.has(row.employeeId)).map(row => row.employeeId))
-      const receivedIds = new Set(receipts.filter(receipt => version && receipt.district === name &&
-        receipt.activeBatchId === version.activeBatchId && expectedIds.has(receipt.employeeId) &&
-        bindings.get(receipt.employeeId) === receipt.userOpenid).map(receipt => receipt.employeeId))
-      return { district: name, expected: expectedIds.size, received: receivedIds.size,
-        pending: expectedIds.size - receivedIds.size, rate: percentage(receivedIds.size, expectedIds.size) }
+      const employees = new Map(rows.filter(row => row.district === name && !managementIds.has(row.employeeId))
+        .map(row => [row.employeeId, row]))
+      const received = new Map(receipts.filter(receipt => version && receipt.district === name &&
+        receipt.activeBatchId === version.activeBatchId && employees.has(receipt.employeeId) &&
+        bindings.get(receipt.employeeId) && bindings.get(receipt.employeeId) === receipt.userOpenid)
+        .map(receipt => [receipt.employeeId, receipt]))
+      employees.forEach(row => people.push({
+        businessMonth, district: name, gridName: row.gridName, realName: row.realName, employeeId: row.employeeId,
+        received: received.has(row.employeeId), claimed: !!bindings.get(row.employeeId),
+        viewedAt: received.has(row.employeeId) ? received.get(row.employeeId).viewedAt : null,
+        cutoffDate: version ? version.cutoffDate : '', activeBatchId: version ? version.activeBatchId : '',
+        finalized: !!(version && version.finalized)
+      }))
+      return { district: name, expected: employees.size, received: received.size,
+        pending: employees.size - received.size, rate: percentage(received.size, employees.size) }
     })
     const expected = districts.reduce((sum, item) => sum + item.expected, 0)
     const received = districts.reduce((sum, item) => sum + item.received, 0)
-    return { districts, expected, received, pending: expected - received, rate: percentage(received, expected) }
+    return { people, summary: { districts, expected, received, pending: expected - received, rate: percentage(received, expected) } }
   }
 
   async function getSummary(user, data) {
-    const businessMonth = String(data.businessMonth || core.monthNow())
-    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(businessMonth)) throw new Error('请选择有效业务月份')
-    const district = String(data.district || '')
-    if (district && !core.DISTRICTS.includes(district)) throw new Error('区县无效')
+    const { businessMonth, district } = filters(data)
     const active = await activeRows(user, false, businessMonth)
     const rows = active.rows.filter(row => !district || row.district === district)
     const versions = active.versions.filter(version => (!district || version.district === district) &&
@@ -62,9 +79,70 @@ module.exports = (db, { all, optionalDoc, activeRows, versionId }) => {
     if (user.role === 'sales_person' && versions.length) {
       result.receipt = { businessMonth, district: versions[0].district, activeBatchId: versions[0].activeBatchId }
     }
-    if (user.role !== 'sales_person') result.participation = await participation(rows, versions, businessMonth,
-      user.role === 'district_manager' ? user.salesManagedDistrict : district)
+    if (user.role !== 'sales_person') result.participation = (await participation(rows, versions, businessMonth,
+      user.role === 'district_manager' ? user.salesManagedDistrict : district)).summary
     return result
+  }
+
+  async function exportParticipation(user, data) {
+    if (!canExportParticipation(user)) throw new Error('仅市场营销部和系统管理员可导出员工数据接收明细')
+    const { businessMonth, district } = filters(data)
+    const active = await activeRows(user, false, businessMonth)
+    const versions = active.versions.filter(item => !district || item.district === district)
+    const { people, summary } = await participation(active.rows.filter(row => !district || row.district === district),
+      versions, businessMonth, district)
+    const timeText = value => {
+      if (!value) return ''
+      const time = new Date(value).getTime()
+      return Number.isFinite(time) ? new Date(time + 8 * 3600000).toISOString().slice(0, 19).replace('T', ' ') : ''
+    }
+    const exportTime = timeText(new Date())
+    const versionColumns = item => ({
+      '统计截止日期': item ? item.cutoffDate || '' : '', '有效批次': item ? item.activeBatchId : '',
+      '版本状态': item ? (item.finalized ? '已定版' : '更新中') : '暂无有效数据'
+    })
+    const totals = [...summary.districts, { district: '合计', ...summary }].map(item => ({
+      '业务月份': businessMonth, '区县': item.district, '应接收人数': item.expected, '已接收人数': item.received,
+      '未接收人数': item.pending, '参与率': item.rate,
+      ...versionColumns(versions.find(version => version.district === item.district))
+    }))
+    // 合计行没有独立版本。
+    totals[totals.length - 1]['版本状态'] = ''
+    const received = [], pending = []
+    people.sort((a, b) => core.DISTRICTS.indexOf(a.district) - core.DISTRICTS.indexOf(b.district) ||
+      String(a.gridName || '').localeCompare(String(b.gridName || ''), 'zh-CN') || a.employeeId.localeCompare(b.employeeId))
+      .forEach(person => {
+        const row = { '业务月份': businessMonth, '区县': person.district, '网格名称': person.gridName || '',
+          '姓名': person.realName || '', '员工编号': String(person.employeeId), '接收状态': person.received ? '已接收' : '未接收' }
+        if (person.received) received.push({ ...row, '首次接收时间': timeText(person.viewedAt), ...versionColumns(person) })
+        else pending.push({ ...row, '认领状态': person.claimed ? '已认领但未查看当前版本' : '未认领', ...versionColumns(person) })
+      })
+    const XLSX = require('xlsx'), workbook = XLSX.utils.book_new()
+    const versionHeaders = ['统计截止日期', '有效批次', '版本状态']
+    const personHeaders = ['业务月份', '区县', '网格名称', '姓名', '员工编号', '接收状态']
+    const append = (name, rows, headers) => {
+      const note = !versions.length ? '该月份该范围暂无有效数据' : !people.length ? '该范围暂无应接收员工数据'
+        : !rows.length ? '该范围暂无' + name : '仅统计当前有效版本，按当前绑定账号判断接收。'
+      const sheet = XLSX.utils.aoa_to_sheet([
+        ['员工数据接收情况 · ' + name], ['业务月份', businessMonth, '导出范围', district || '全市'],
+        ['导出时间（北京时间）', exportTime, '说明', note], [], headers
+      ])
+      XLSX.utils.sheet_add_json(sheet, rows, { header: headers, skipHeader: true, origin: 'A6' })
+      sheet['!cols'] = headers.map(header => ({ wch: header === '有效批次' ? 28 : header === '首次接收时间' || header === '认领状态' ? 26 : 20 }))
+      sheet['!merges'] = [XLSX.utils.decode_range('A1:' + XLSX.utils.encode_col(headers.length - 1) + '1')]
+      sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + rows.length, c: headers.length - 1 } }) }
+      XLSX.utils.book_append_sheet(workbook, sheet, name)
+    }
+    append('区县汇总', totals, ['业务月份', '区县', '应接收人数', '已接收人数', '未接收人数', '参与率', ...versionHeaders])
+    append('已接收人员', received, [...personHeaders, '首次接收时间', ...versionHeaders])
+    append('未接收人员', pending, [...personHeaders, '认领状态', ...versionHeaders])
+    const base64 = XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' })
+    const snapshot = items => JSON.stringify(items.map(item => [item.district, item.activeBatchId, item.revision || 0,
+      item.cutoffDate || '', !!item.finalized]).sort((a, b) => a[0].localeCompare(b[0])))
+    const latest = (await versionsFor(user, businessMonth)).filter(item => !district || item.district === district)
+    if (snapshot(versions) !== snapshot(latest)) throw new Error('导出期间数据版本已更新，请刷新接收情况后重试')
+    return { base64, filename: '员工数据接收情况_' + businessMonth + '_' + (district || '全市') + '.xlsx',
+      businessMonth, district, participation: summary }
   }
 
   async function recordReceipt(user, data) {
@@ -95,5 +173,5 @@ module.exports = (db, { all, optionalDoc, activeRows, versionId }) => {
     return { recorded: true }
   }
 
-  return { getSummary, recordReceipt }
+  return { getSummary, recordReceipt, exportParticipation, canExportParticipation }
 }

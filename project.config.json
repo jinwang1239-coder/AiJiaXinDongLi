@@ -47,7 +47,10 @@
   "simulatorPluginLibVersion": {},
   "packOptions": {
     "ignore": [
-      { "type": "file", "value": "test-integration.js" }
+      {
+        "value": "test-integration.js",
+        "type": "file"
+      }
     ],
     "include": []
   },

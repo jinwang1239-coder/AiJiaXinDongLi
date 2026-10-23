@@ -42,4 +42,9 @@ async function exportSales(filters) {
   const result = await callSales('export', { filters })
   await require('./export').saveExcelFile(result.base64, result.filename)
 }
-module.exports = { callSales, currentMonth, renderSalesData, exportSales }
+async function exportSalesParticipation(data) {
+  const result = await callSales('exportParticipation', data)
+  await require('./export').saveExcelFile(result.base64, result.filename)
+  return result
+}
+module.exports = { callSales, currentMonth, renderSalesData, exportSales, exportSalesParticipation }

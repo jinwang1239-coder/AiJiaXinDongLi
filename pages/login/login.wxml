@@ -62,7 +62,7 @@
       <view wx:if="{{loading}}">加载中…</view>
       <view class="feedback-card" wx:if="{{errorText}}">{{errorText}}</view>
       <view class="feedback-card" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
-      <sales-participation wx:if="{{!isEmployee}}" value="{{participation}}" scope-label="{{scopeLabel}}" />
+      <sales-participation wx:if="{{!isEmployee}}" value="{{participation}}" scope-label="{{scopeLabel}}" can-export="{{canExportParticipation}}" exporting="{{exportingParticipation}}" bind:export="onExportParticipation" />
       <view class="salary-card" wx:if="{{isEmployee && !loading && !errorText}}">
         <view class="salary-banner">{{monthLabel}} 业务预计总酬金 · {{monthStatus}}</view>
         <view class="salary-body">

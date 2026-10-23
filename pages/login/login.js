@@ -1,6 +1,6 @@
 const auth = require('../../utils/auth')
 const workspace = require('../../utils/workspace')
-const { callSales, currentMonth, renderSalesData } = require('../../utils/sales-service')
+const { callSales, currentMonth, renderSalesData, exportSalesParticipation } = require('../../utils/sales-service')
 const emptyStats = () => ({ totalRecords: 0, monthRecords: 0, totalCommission: '0.00',
   monthCommission: '0.00', settledCommission: '0.00', unsettledCommission: '0.00', currentDue: '0.00' })
 
@@ -11,7 +11,7 @@ Page({
     profileDisplayName: '', profileSubtitle: '', loginPrompt: '', canImport: false, canMaintain: false, claimed: false,
     monthStatus: '', cutoffDate: '', profileForm: { employeeId: '' }, participation: null, scopeLabel: '',
     stats: emptyStats(), loading: false, savingProfile: false, errorText: '', receiptWarning: '',
-    canHandleFeedback: false, pendingCount: 0, feedbackError: ''
+    canHandleFeedback: false, pendingCount: 0, feedbackError: '', canExportParticipation: false, exportingParticipation: false
   },
   onLoad() {
     const selectedWorkspaceType = workspace.getPreferredWorkspaceType()
@@ -19,7 +19,7 @@ Page({
   },
   async onShow() {
     this.visible = true
-    this.setData({ loading: true, participation: null, canImport: false, canMaintain: false })
+    this.setData({ loading: true, participation: null, canImport: false, canMaintain: false, canExportParticipation: false })
     try {
       if (!await auth.ensureLoggedIn()) { this.setData({ hasUserInfo: false, loading: false }); return }
       const user = await auth.getCurrentUserInfo()
@@ -91,7 +91,8 @@ Page({
       const access = await callSales('getAccess')
       if (!current()) return
       const isEmployee = access.role === 'sales_person'
-      this.setData({ isEmployee, canImport: access.canImport, canMaintain: access.canMaintain })
+      this.setData({ isEmployee, canImport: access.canImport, canMaintain: access.canMaintain,
+        canExportParticipation: access.canExportParticipation === true })
       if (isEmployee) {
         const result = await callSales('list', { personal: true, referenceMonth: month, receiptMonth: month, pageSize: 1 })
         const stats = { ...result.stats }
@@ -117,6 +118,18 @@ Page({
     } finally { if (current()) this.setData({ loading: false }) }
   },
   navigateToImport() { if (this.data.canImport) wx.navigateTo({ url: '/pages/collect/collect' }) },
+  async onExportParticipation(e) {
+    if (!this.data.canExportParticipation || this.data.exportingParticipation || !this.data.participation) return
+    const businessMonth = this.data.monthLabel, district = e.detail.district || ''
+    this.setData({ exportingParticipation: true })
+    try {
+      const result = await exportSalesParticipation({ businessMonth, district })
+      if (this.visible && this.data.monthLabel === businessMonth && this.data.canExportParticipation && !district) {
+        this.setData({ participation: result.participation })
+      }
+    } catch (error) { if (this.visible) this.error(error) }
+    finally { this.setData({ exportingParticipation: false }) }
+  },
   navigateToMaintenance() { if (this.data.canMaintain) wx.navigateTo({ url: '/pages/collect/collect?mode=maintenance' }) },
   navigateToFeedback() {
     if (!this.data.isEmployee) {
@@ -132,7 +145,7 @@ Page({
       this.requestId = (this.requestId || 0) + 1
       auth.logout()
       this.setData({ hasUserInfo: false, userInfo: null, showProfileModal: false, canImport: false,
-        canMaintain: false, participation: null, canHandleFeedback: false, stats: emptyStats() })
+        canMaintain: false, canExportParticipation: false, participation: null, canHandleFeedback: false, stats: emptyStats() })
     } })
   }
 })

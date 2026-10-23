@@ -10,7 +10,7 @@ module.exports = (db, all) => async (user, businessMonth) => {
   const versions = await all(db.collection('sales_active_versions').where({ businessMonth }))
   const records = await all(db.collection('sales_month_records').where({ employeeId: user.employeeId, businessMonth }))
   const active = records.filter(row => versions.some(version => version.activeBatchId === row.importBatchId && version.district === row.district))
-  if (active.length !== 1) throw new Error('该业务月份暂无唯一有效的本人数据，请联系销售业务部')
+  if (active.length !== 1) throw new Error('该业务月份暂无唯一有效的本人数据，请联系市场营销部')
   const row = active[0]
   return { businessMonth, batchId: row.importBatchId, salaryAmount: row.commission,
     realName: row.realName, district: row.district, gridName: row.gridName, employeeId: row.employeeId }
