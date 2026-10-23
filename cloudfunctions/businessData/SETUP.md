@@ -35,6 +35,11 @@ sales_active_versions 中既有月份锁文档，也有月份区县有效版本�
 workspaceType: "sales"，role: "sales_department"，status: "active"，permissions.salesImport: true。
 区县主管不会取得导入权限；员工填报资料不能修改权限。
 系统管理员保留 role: "system_admin"，只有 permissions.salesImport: true 时才开放导入、定版和撤销定版，不需要修改角色或原工作台类型。系统管理员始终可进入认领与数据维护；普通导入人员可解除错误认领，但不能清空区县月份。
+
+销售管理人员认领：登录页现有资料弹窗可切换“员工认领 / 管理人员认领”。管理人员填写姓名、网格通账号，userManagement 在云端匹配 sales-managers.js 内的初始名单：罗平（15826500088）、朱丽（13997646106）、倪江辉（13997605198）为市场营销部，李奇琦（15171129197）为系统管理员。首次有效认领自动创建 sales_manager_accounts 集合并初始化四条名册（文档ID为网格通账号）；已有名册、绑定和停用状态不会被覆盖，无需导入Excel或运行临时配置函数。集合应保持客户端不可读写，仅后台维护。
+认领事务同时绑定名册的 boundOpenid / boundUserId，更新 users 的 role、workspaceType=sales、salesManagerAccount、permissions.salesImport=true 和资料完成状态；保留其他权限、原员工编号及集客资料字段。姓名和账号必须同时匹配，已有其他微信账号使用该网格通账号或管理身份时拒绝认领；同一微信可重复确认本人身份，不能自行更换。此方案按姓名和账号认领，不增加短信验证。认领成功立即刷新全市管理首页，后续登录直接读取已保存角色。已有集客账号若资料匹配此四人名单，选择销售工作台后先进入管理认领，不自动跳回集客；王谨等原有管理账号保持原配置。
+本次更新部署 userManagement（云端安装依赖）并发布小程序前端即可；首次初始化及事务涉及多次数据库操作，建议将 userManagement 执行超时设为60秒。本地必要验证：node cloudfunctions/userManagement/manager-claim-test.js。停用管理人员时同时停用 users 账号与对应名册；仅将名册设为 inactive 是禁止新认领，不会撤回已写入 users 的权限。
+
 销售区县主管另须由后台配置 users.salesManagedDistrict，作为固定管理区县；不使用认领所得的个人区县授予管理范围。未配置时不开放区县业务数据。
 
 ## 销售反馈路由

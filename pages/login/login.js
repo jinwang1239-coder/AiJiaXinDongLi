@@ -9,7 +9,8 @@ Page({
     userInfo: null, hasUserInfo: false, userRole: '', isEmployee: true, selectedWorkspaceType: 'sales',
     roleText: '', profileCompleted: false, showProfileModal: false, monthLabel: currentMonth(),
     profileDisplayName: '', profileSubtitle: '', loginPrompt: '', canImport: false, canMaintain: false, claimed: false,
-    monthStatus: '', cutoffDate: '', profileForm: { employeeId: '' }, participation: null, scopeLabel: '',
+    monthStatus: '', cutoffDate: '', profileForm: { employeeId: '', realName: '', gridAccount: '' }, participation: null, scopeLabel: '',
+    claimMode: 'employee', canClaimManager: false, managerClaimPending: false,
     stats: emptyStats(), loading: false, savingProfile: false, errorText: '', receiptWarning: '',
     canHandleFeedback: false, pendingCount: 0, feedbackError: '', canExportParticipation: false, exportingParticipation: false
   },
@@ -25,6 +26,7 @@ Page({
       const user = await auth.getCurrentUserInfo()
       if (!this.visible) return
       this.setUserState(user)
+      if (this.data.managerClaimPending) { this.setData({ loading: false }); return }
       if (workspace.isLineProjectWorkspace(user)) { await workspace.relaunchWorkspaceHome(user); return }
       await this.loadDashboard()
     } catch (error) {
@@ -40,17 +42,22 @@ Page({
     this.setData({ selectedWorkspaceType, loginPrompt: '已选择：' + workspace.getWorkspaceLabel(selectedWorkspaceType) })
   },
   setUserState(user) {
-    const isEmployee = user.role === 'sales_person'
+    const managerClaimPending = workspace.getPreferredWorkspaceType() === 'sales' &&
+      workspace.isLineProjectWorkspace(user) && user.canClaimSalesManager === true
+    const isEmployee = managerClaimPending || user.role === 'sales_person'
     const completed = workspace.isProfileCompleted(user)
     this.setData({
       userInfo: { nickName: user.nickName || '', avatarUrl: user.avatarUrl || '' },
-      hasUserInfo: true, userRole: user.role, isEmployee, selectedWorkspaceType: workspace.getWorkspaceType(user),
+      hasUserInfo: true, userRole: user.role, isEmployee,
+      selectedWorkspaceType: managerClaimPending ? 'sales' : workspace.getWorkspaceType(user),
       roleText: workspace.getRoleText(user), profileCompleted: completed,
-      showProfileModal: isEmployee && !completed, claimed: !!user.salesClaimed,
+      showProfileModal: managerClaimPending || isEmployee && !completed, claimed: !!user.salesClaimed,
+      canClaimManager: !!user.canClaimSalesManager, managerClaimPending,
+      claimMode: managerClaimPending ? 'manager' : 'employee',
       profileDisplayName: user.realName || user.nickName || (isEmployee ? '待认领员工编号' : '管理人员'),
       profileSubtitle: isEmployee ? [user.employeeId, user.district, user.gridName].filter(Boolean).join(' / ')
         : user.role === 'district_manager' ? '管理区县：' + (user.salesManagedDistrict || '尚未配置') : '管理范围：全市',
-      profileForm: { employeeId: user.employeeId || '' }
+      profileForm: { employeeId: user.employeeId || '', realName: user.realName || '', gridAccount: user.gridAccount || '' }
     })
   },
   async onLogin() {
@@ -58,23 +65,30 @@ Page({
     try {
       const result = await auth.login()
       this.setUserState(result.user)
+      if (this.data.managerClaimPending) return
       if (workspace.isLineProjectWorkspace(result.user)) await workspace.relaunchWorkspaceHome(result.user)
       else await this.loadDashboard()
     } catch (error) { this.error(error) } finally { this.setData({ loading: false }) }
   },
   openProfileModal() {
-    if (!this.data.isEmployee || this.data.claimed) { wx.navigateTo({ url: '/pages/profile/profile' }); return }
-    this.setData({ showProfileModal: true })
+    if ((!this.data.isEmployee || this.data.claimed) && !this.data.canClaimManager) { wx.navigateTo({ url: '/pages/profile/profile' }); return }
+    this.setData({ showProfileModal: true, claimMode: this.data.canClaimManager ? 'manager' : 'employee' })
   },
   closeProfileModal() { this.setData({ showProfileModal: false }) },
   stopModalPropagation() {},
-  onProfileInputChange(e) { this.setData({ 'profileForm.employeeId': e.detail.value }) },
+  onClaimModeChange(e) { if (!this.data.savingProfile) this.setData({ claimMode: e.currentTarget.dataset.mode }) },
+  onProfileInputChange(e) { this.setData({ ['profileForm.' + e.currentTarget.dataset.field]: e.detail.value }) },
   async submitProfile() {
-    if (this.data.savingProfile || !this.data.isEmployee) return
-    if (!this.data.profileForm.employeeId.trim()) { this.error(new Error('请输入员工编号')); return }
+    if (this.data.savingProfile) return
+    const manager = this.data.claimMode === 'manager', form = this.data.profileForm
+    if (manager ? !form.realName.trim() || !form.gridAccount.trim() : !form.employeeId.trim()) {
+      this.error(new Error(manager ? '请输入姓名和网格通账号' : '请输入员工编号')); return
+    }
     this.setData({ savingProfile: true })
     try {
-      this.setUserState(await auth.updateProfile(this.data.profileForm))
+      this.setUserState(await auth.updateProfile(manager
+        ? { claimType: 'manager', realName: form.realName, gridAccount: form.gridAccount }
+        : { employeeId: form.employeeId }))
       this.setData({ showProfileModal: false })
       await this.loadDashboard()
       wx.showToast({ title: '认领成功', icon: 'success' })

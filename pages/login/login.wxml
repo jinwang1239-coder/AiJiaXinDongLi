@@ -62,8 +62,9 @@
       <view wx:if="{{loading}}">加载中…</view>
       <view class="feedback-card" wx:if="{{errorText}}">{{errorText}}</view>
       <view class="feedback-card" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
+      <view class="feedback-card" wx:if="{{managerClaimPending}}" bindtap="openProfileModal">请先完成管理人员认领，点击填写资料。</view>
       <sales-participation wx:if="{{!isEmployee}}" value="{{participation}}" scope-label="{{scopeLabel}}" can-export="{{canExportParticipation}}" exporting="{{exportingParticipation}}" bind:export="onExportParticipation" />
-      <view class="salary-card" wx:if="{{isEmployee && !loading && !errorText}}">
+      <view class="salary-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText}}">
         <view class="salary-banner">{{monthLabel}} 业务预计总酬金 · {{monthStatus}}</view>
         <view class="salary-body">
           <view class="salary-amount">￥{{stats.monthCommission}}</view>
@@ -71,7 +72,7 @@
         </view>
       </view>
 
-      <view class="detail-card" wx:if="{{isEmployee && !loading && !errorText}}">
+      <view class="detail-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText}}">
         <view class="detail-header">业务量与酬金明细</view>
         <view class="detail-grid">
           <view class="detail-item">
@@ -101,7 +102,7 @@
         </view>
       </view>
 
-      <view class="feedback-card" wx:if="{{isEmployee || canHandleFeedback}}">
+      <view class="feedback-card" wx:if="{{!managerClaimPending && (isEmployee || canHandleFeedback)}}">
         <view class="feedback-tip">{{isEmployee ? '如对酬金有异议，可提交反馈并查看处理进度。' : '处理分配给本人的销售酬金反馈。'}}</view>
         <button class="feedback-btn" bindtap="navigateToFeedback">{{isEmployee ? '我的酬金反馈' : '待处理反馈（' + pendingCount + '）'}}</button>
       </view>
@@ -110,18 +111,33 @@
   </view>
 </scroll-view>
 
-<view wx:if="{{showProfileModal && isEmployee}}" class="modal-mask" bindtap="closeProfileModal">
+<view wx:if="{{showProfileModal}}" class="modal-mask" bindtap="closeProfileModal">
   <view class="modal-panel" catchtap="stopModalPropagation">
     <view class="modal-header">
       <view class="modal-title">补充个人信息</view>
       <view class="modal-close" bindtap="closeProfileModal">×</view>
     </view>
 
-    <view class="form-group">
+    <view class="claim-tabs" wx:if="{{isEmployee && !managerClaimPending}}">
+      <view class="claim-tab {{claimMode === 'employee' ? 'claim-tab-active' : ''}}" data-mode="employee" bindtap="onClaimModeChange">员工认领</view>
+      <view class="claim-tab {{claimMode === 'manager' ? 'claim-tab-active' : ''}}" data-mode="manager" bindtap="onClaimModeChange">管理人员认领</view>
+    </view>
+    <block wx:if="{{claimMode === 'manager'}}">
+      <view class="form-group">
+        <view class="form-label">姓名</view>
+        <input class="form-input" placeholder="请输入本人姓名" value="{{profileForm.realName}}" data-field="realName" bindinput="onProfileInputChange" disabled="{{savingProfile}}" />
+      </view>
+      <view class="form-group">
+        <view class="form-label">网格通账号</view>
+        <input class="form-input" placeholder="请输入网格通账号" type="number" maxlength="11" value="{{profileForm.gridAccount}}" data-field="gridAccount" bindinput="onProfileInputChange" disabled="{{savingProfile}}" />
+      </view>
+      <view>与预录管理名单匹配后绑定当前微信，后续登录自动识别。</view>
+    </block>
+    <view class="form-group" wx:else>
       <view class="form-label">员工编号</view>
       <input class="form-input" placeholder="输入管理员已导入的员工编号" value="{{profileForm.employeeId}}" disabled="{{claimed}}" data-field="employeeId" bindinput="onProfileInputChange" />
       <view>填写编号即可认领，姓名、区县和网格由导入资料自动取得。</view>
     </view>
-    <button class="submit-btn" bindtap="submitProfile" loading="{{savingProfile}}">认领员工编号</button>
+    <button class="submit-btn" bindtap="submitProfile" loading="{{savingProfile}}" disabled="{{savingProfile}}">{{claimMode === 'manager' ? '认领管理身份' : '认领员工编号'}}</button>
   </view>
 </view>

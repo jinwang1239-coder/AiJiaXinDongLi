@@ -39,6 +39,7 @@
 - sales_import_batches：销售导入批次与更正记录。
 - sales_active_versions：月份区县有效版本、定版及并发锁。
 - sales_employees：员工编号与微信账号认领绑定。
+- sales_manager_accounts：销售管理人员预录名册与微信认领绑定，首次有效管理认领时自动初始化。
 - sales_claim_logs：认领更正审计。
 - sales_data_receipts：员工查看月份区县有效版本记录，按当前绑定微信统计参与率。
 - `salary_feedbacks`：销售酬金反馈和集客问题反馈。
@@ -278,6 +279,7 @@ action：
 
 - `login`：按唯一 OPENID 查询或创建用户；新用户采用选择的工作台，角色默认 sales_person。
 - `updateProfile`：销售普通员工仅认领 employeeId，管理资料由后台维护；集客保留姓名、网格通账号、区县和网格校验。
+- `updateProfile` 的 claimType=manager：调用 sales-managers.js，以姓名和网格通账号匹配四人名单，事务绑定微信并保存管理角色及销售导入权限；不接受前端指定角色。manager-claim-test.js 验证并发、回滚、角色和首页切换。
 - `getUserInfo`：校验账号有效、唯一；销售员工资料取最新有效业务快照，管理人员不依赖员工认领。
 - 原 `getUsersByRole` 无前端调用且缺少管理范围限制，已关闭。
 - `test`：健康检查。
@@ -496,6 +498,7 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 #### `pages/login/login.js`
 
 登录与工作台路由；销售员工只填写 employeeId 完成一次认领，姓名区县网格取导入资料。薪酬卡保留布局，按业务月份展示总酬金，另列当月应核算及版本状态。授权市场营销部人员看到专属导入入口。集客继续原资料体系。
+资料弹窗支持“管理人员认领”，填写姓名和网格通账号成功后立即切换全市管理首页；原集客账号匹配预录名单时，可在选择销售工作台后先认领。初始名单及自动初始化逻辑在 cloudfunctions/userManagement/sales-managers.js。
 
 #### `pages/login/login.wxml`
 

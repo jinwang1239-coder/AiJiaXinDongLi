@@ -6,6 +6,7 @@ cloud.init({
 
 const db = cloud.database()
 const salesIdentity = require('./sales-identity')(db)
+const salesManagers = require('./sales-managers')(db)
 const WORKSPACE_TYPES = {
   SALES: 'sales',
   LINE_PROJECT: 'line_project'
@@ -140,6 +141,9 @@ async function updateProfile(wxContext, data = {}) {
   const account = await db.collection('users').where({ openid }).limit(2).get()
   if (account.data.length !== 1) throw new Error('用户不存在或账号重复')
   if (account.data[0].status === 'inactive') throw new Error('当前账号已停用')
+  if (data.claimType === 'manager') {
+    return { success: true, data: normalizeUser(await salesManagers.claim(account.data[0], data)) }
+  }
   if (account.data[0].role !== 'sales_person' && (account.data[0].workspaceType === WORKSPACE_TYPES.SALES ||
       account.data[0].role === SYSTEM_ADMIN_ROLE && data.workspaceType === WORKSPACE_TYPES.SALES)) {
     throw new Error('销售管理资料由后台维护，无需认领员工编号')
@@ -461,6 +465,7 @@ function normalizeUser(user) {
   return {
     ...user,
     role,
+    canClaimSalesManager: !user.salesManagerAccount && salesManagers.isListed(user),
     workspaceType,
     district: user.district || '',
     gridName: user.gridName || '',
