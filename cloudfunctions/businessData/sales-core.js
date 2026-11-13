@@ -73,6 +73,9 @@ function parseWorkbook(workbook, XLSX, input) {
   meta.districts = [...new Set(rows.map(row => row.district))].sort()
   return { meta, rows, errors }
 }
+function isCommissionComplete(schedule, referenceMonth) {
+  return schedule.every(item => !item.amount || item.settlementMonth <= referenceMonth)
+}
 function flatten(rows, versions, referenceMonth = monthNow()) {
   const records = []
   for (const row of rows) {
@@ -94,7 +97,7 @@ function flatten(rows, versions, referenceMonth = monthNow()) {
         district: row.district, gridName: row.gridName, developer: row.realName, businessName: item.businessName,
         quantity: item.quantity, commission: item.commissionDetails.total, commissionDetails: item.commissionDetails,
         cutoffDate: version.cutoffDate, finalized: version.finalized, statusText: version.finalized ? '已定版' : '更新中',
-        settlementSchedule: schedule, settledTotal, unsettledTotal,
+        settlementSchedule: schedule, settledTotal, unsettledTotal, commissionCompleted: isCommissionComplete(schedule, referenceMonth),
         settlementSummary: { settledTotal, unsettledTotal, settledTotalText: settledTotal.toFixed(2), unsettledTotalText: unsettledTotal.toFixed(2) }
       })
     }
@@ -103,11 +106,16 @@ function flatten(rows, versions, referenceMonth = monthNow()) {
 }
 function stats(records, referenceMonth = monthNow()) {
   const month = records.filter(item => item.businessMonth === referenceMonth)
+  const completed = records.filter(item => isCommissionComplete(item.settlementSchedule, referenceMonth))
+  const pending = records.filter(item => !isCommissionComplete(item.settlementSchedule, referenceMonth))
   const sum = (items, key) => money(items.reduce((total, item) => total + Number(item[key] || 0), 0))
   return {
     totalRecords: sum(records, 'quantity'), totalCommission: sum(records, 'commission'),
     monthRecords: sum(month, 'quantity'), monthCommission: sum(month, 'commission'),
     settledCommission: sum(records, 'settledTotal'), unsettledCommission: sum(records, 'unsettledTotal'),
+    completedRecords: sum(completed, 'quantity'), completedCommission: sum(completed, 'commission'),
+    pendingRecords: sum(pending, 'quantity'), pendingCommission: sum(pending, 'commission'),
+    pendingSettledCommission: sum(pending, 'settledTotal'), pendingUnsettledCommission: sum(pending, 'unsettledTotal'),
     currentDue: money(records.reduce((total, record) => total + record.settlementSchedule
       .filter(item => item.settlementMonth === referenceMonth).reduce((sum, item) => sum + item.amount, 0), 0))
   }

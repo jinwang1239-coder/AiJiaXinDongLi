@@ -110,8 +110,7 @@ page {
 }
 
 .user-card,
-.salary-card,
-.detail-card {
+.salary-card {
   background: #fff;
   border-radius: 24rpx;
   box-shadow: 0 12rpx 28rpx rgba(54, 79, 110, 0.08);
@@ -211,9 +210,11 @@ page {
   color: #566579;
 }
 
-.detail-card {
-  padding: 28rpx 24rpx;
-}
+.business-salary-card .salary-banner { background: #e9f2fc; color: #24466c; font-size: 30rpx; }
+.business-salary-card .salary-body { background: #fff; }
+.business-salary-card .salary-amount { font-size: 64rpx; }
+.salary-link { margin-top: 24rpx; padding: 12rpx 8rpx; background: transparent; color: #1676cc; font-size: 26rpx; line-height: 1.6; }
+.salary-link::after { border: none; }
 
 .feedback-card {
   padding: 28rpx 24rpx;
@@ -242,41 +243,6 @@ page {
   color: #fff;
   font-size: 30rpx;
   font-weight: 600;
-}
-
-.detail-header {
-  margin-bottom: 22rpx;
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #233142;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18rpx;
-}
-
-.detail-item {
-  padding: 22rpx 18rpx;
-  border-radius: 18rpx;
-  background: #f4f8fc;
-}
-
-.detail-label {
-  font-size: 24rpx;
-  color: #718095;
-  margin-bottom: 10rpx;
-}
-
-.detail-value {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #243447;
-}
-
-.detail-money {
-  color: #ff6a00;
 }
 
 .modal-mask {

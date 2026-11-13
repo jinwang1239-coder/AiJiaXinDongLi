@@ -4,7 +4,7 @@ const products = require('../../utils/product-config')
 const initialFilters = () => ({ businessMonth: currentMonth(), district: '', businessName: '', developer: '' })
 Page({
   data: {
-    records: [], stats: {}, loading: false, page: 1, hasMore: false,
+    records: [], stats: {}, cumulativeStats: null, isEmployee: false, loading: false, page: 1, hasMore: false,
     filters: initialFilters(), appliedFilters: null, referenceMonth: '', error: '', receiptWarning: '',
     businessTypes: ['全部业务', ...products.getProducts().map(item => item.name)], districts: ['全部区县'],
     showDetail: false, detail: null
@@ -20,18 +20,31 @@ Page({
     this.setData({ loading: true, error: '', receiptWarning: '' })
     if (!append) this.setData({ records: [], hasMore: false, showDetail: false, detail: null })
     try {
-      if (!await auth.ensureLoggedIn()) { if (current()) wx.switchTab({ url: '/pages/login/login' }); return }
+      const user = await auth.ensureLoggedIn()
+      if (!user) { if (current()) wx.switchTab({ url: '/pages/login/login' }); return }
+      if (user.role === 'sales_person') {
+        query.district = ''; query.businessName = ''; query.developer = ''
+      }
       const page = append ? this.data.page + 1 : 1
       const result = await callSales('list', { page, pageSize: 30, filters: query })
       if (!current()) return
       const records = append ? this.data.records.concat(result.records) : result.records
       const stats = { ...result.stats }
       for (const key of ['totalCommission', 'settledCommission', 'unsettledCommission']) stats[key] = Number(stats[key] || 0).toFixed(2)
-      await renderSalesData(this, { records, stats, page, appliedFilters: query,
+      const isEmployee = result.isEmployee === true || user.role === 'sales_person'
+      if (isEmployee && !result.cumulativeStats) throw new Error('个人累计核酬统计未更新，请重新部署 businessData 云函数')
+      const cumulativeStats = result.cumulativeStats ? { ...result.cumulativeStats } : null
+      if (cumulativeStats) {
+        for (const key of ['totalCommission', 'completedCommission', 'pendingCommission', 'pendingSettledCommission', 'pendingUnsettledCommission']) {
+          cumulativeStats[key] = Number(cumulativeStats[key] || 0).toFixed(2)
+        }
+      }
+      await renderSalesData(this, { records, stats, cumulativeStats, isEmployee, page, appliedFilters: query,
+        ...(isEmployee ? { 'filters.district': '', 'filters.businessName': '', 'filters.developer': '' } : {}),
         referenceMonth: result.referenceMonth, hasMore: records.length < result.total,
         districts: ['全部区县', ...result.filterOptions.districts] }, result.receipts || [], current)
     } catch (error) {
-      if (current()) this.setData({ records: [], stats: {}, hasMore: false, appliedFilters: null, error: error.message || '加载失败，请重试' })
+      if (current()) this.setData({ records: [], stats: {}, cumulativeStats: null, hasMore: false, appliedFilters: null, error: error.message || '加载失败，请重试' })
     } finally { if (current()) { this.setData({ loading: false }); wx.stopPullDownRefresh() } }
   },
   onMonthChange(e) { this.setData({ 'filters.businessMonth': e.detail.value }); this.loadData() },

@@ -11,9 +11,54 @@
   <view class="hint" wx:if="{{loading}}">加载中…</view>
   <view class="card error" wx:if="{{error}}">{{error}}<button size="mini" bindtap="loadData">重新加载</button></view>
   <block wx:if="{{summary}}">
+    <block wx:if="{{commissionPlan}}">
+      <view class="card" id="business-detail">
+        <view class="card-title">{{businessMonth}}业务酬金与分期</view>
+        <view class="total-label">{{summary.dataDateText}} · {{commissionPlan.businessStatus}} · {{commissionPlan.businessQuantity}}笔</view>
+        <view class="plan-total">￥{{commissionPlan.businessTotal}}</view>
+        <view class="plan-subtitle">本月业务的分月核发安排</view>
+        <view class="plan-row" wx:for="{{commissionPlan.businessSchedule}}" wx:key="settlementMonth">
+          <text>{{item.settlementMonth}} · {{item.period}}</text><text class="item-money">￥{{item.amount}}</text>
+        </view>
+        <view class="plan-subtitle">各项业务明细</view>
+        <view class="product-group" wx:for="{{commissionPlan.products}}" wx:for-item="product" wx:key="businessName">
+          <view class="plan-row" data-name="{{product.businessName}}" bindtap="toggleProduct">
+            <view>{{product.businessName}}<view class="quantity">{{product.quantity}}笔 · {{expandedProduct === product.businessName ? '收起分期 ∧' : '查看分期 ∨'}}</view></view>
+            <text class="item-money">￥{{product.total}}</text>
+          </view>
+          <view class="product-schedule" wx:if="{{expandedProduct === product.businessName}}">
+            <view class="plan-row" wx:for="{{product.schedule}}" wx:key="settlementMonth">
+              <text>{{item.settlementMonth}} · {{item.period}}</text><text>￥{{item.amount}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card">
+        <view class="card-title">未来核发计划</view>
+        <picker mode="date" fields="month" value="{{payoutMonth}}" bindchange="onPayoutMonthChange">
+          <view class="filter-field">计划基准月份：{{payoutMonth}} ▾</view>
+        </picker>
+        <view class="future-metric" data-month="{{commissionPlan.nextPayoutMonth}}" bindtap="onFutureMonthTap">
+          <view class="money-label">{{commissionPlan.nextPayoutMonth}}预计核发酬金</view>
+          <view class="money">￥{{commissionPlan.nextPayoutTotal}}</view>
+          <view class="hint">查看来源月份与业务组成 ›</view>
+        </view>
+        <view class="future-metric">
+          <view class="money-label">{{payoutMonth}}之后的未来待核发余额</view>
+          <view class="money">￥{{commissionPlan.futureTotal}}</view>
+          <view class="hint">包含{{commissionPlan.nextPayoutMonth}}及以后各月的计划金额</view>
+        </view>
+        <view class="plan-row" wx:for="{{commissionPlan.futureMonths}}" wx:key="settlementMonth" data-month="{{item.settlementMonth}}" bindtap="onFutureMonthTap">
+          <text>{{item.settlementMonth}}</text><text class="item-money">￥{{item.amount}} ›</text>
+        </view>
+        <view class="hint" wx:if="{{!commissionPlan.futureMonths.length}}">暂无后续计划核发金额。</view>
+      </view>
+    </block>
+    <block wx:else>
     <view class="card overview">
       <view class="card-title">{{summary.scopeLabel}}重点业务汇总</view>
-      <view class="total-label">{{businessMonth}} · 总业务量</view>
+      <view class="total-label">{{summary.dataDateText}} · 总业务量</view>
       <view class="total-quantity">{{summary.totalQuantity}}<text> 笔</text></view>
       <view class="money-grid">
         <view><view class="money-label">下月预估核发酬金</view><view class="month">{{summary.nextMonth}} · T+1</view><view class="money">￥{{summary.nextAmount}}</view></view>
@@ -29,6 +74,7 @@
       </view>
     </view>
     <view class="card hint" wx:if="{{!summary.hasData}}">{{summary.scopeLabel === '个人' ? '本人当前月份暂无数据，请确认已认领员工编号，或选择其他业务月份。' : '该月份管理范围内暂无业务数据，请选择其他月份或等待发布。'}}</view>
+    </block>
     <view class="card error" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
   </block>
 </view>

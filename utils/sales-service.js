@@ -5,7 +5,7 @@ const callSales = async (action, data = {}) => {
   } catch (error) {
     if (Number(error.errCode) === -504003 || /-504003|FUNCTIONS_TIME_LIMIT_EXCEEDED|Invoking task timed out/i.test(error.errMsg || error.message || '')) {
       const timeout = new Error('业务云函数执行超时。请在云开发控制台将 businessData 的执行超时时间设为至少60秒。' +
-        (action === 'importCommit' ? '本次发布结果尚未确认，请先刷新最近导入批次，再重新预览，勿连续重复提交。' : '调整后重新操作。'))
+        (action === 'importCommit' ? '本次发布结果尚未确认，请先刷新区县数据维护中的截止日期和状态，再重新预览，勿连续重复提交。' : '调整后重新操作。'))
       timeout.code = 'SALES_FUNCTION_TIMEOUT'
       throw timeout
     }
@@ -19,9 +19,15 @@ const callSales = async (action, data = {}) => {
   if (action === 'getSummary' && (!result || !Array.isArray(result.products) || !Array.isArray(result.districtOptions))) {
     throw new Error('业务汇总返回格式异常，请重新部署 businessData 云函数。')
   }
-  if (['list', 'getStats', 'getImportBatches'].includes(action) &&
-      (!result || !Array.isArray(result.records) || !Array.isArray(result.versions) ||
-      (action !== 'getImportBatches' && (!result.stats || typeof result.stats !== 'object')))) {
+  if (action === 'getSummary' && result.scopeLabel === '个人' &&
+      (!result.commissionPlan || !Array.isArray(result.commissionPlan.payoutGroups) ||
+      !Array.isArray(result.commissionPlan.businessSchedule) || !Array.isArray(result.commissionPlan.products) ||
+      !Array.isArray(result.commissionPlan.futureMonths) || !Array.isArray(result.commissionPlan.receipts))) {
+    throw new Error('个人酬金计划返回格式异常，请重新部署 businessData 云函数。')
+  }
+  if ((['list', 'getStats'].includes(action) &&
+      (!result || !Array.isArray(result.records) || !Array.isArray(result.versions) || !result.stats || typeof result.stats !== 'object')) ||
+      (action === 'getActiveVersions' && (!result || !Array.isArray(result.versions)))) {
     throw new Error('销售接口返回格式异常，请检查当前云环境并重新部署 businessData 云函数。')
   }
   return result
@@ -29,6 +35,16 @@ const callSales = async (action, data = {}) => {
 const currentMonth = () => {
   const now = new Date()
   return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+}
+function formatCommissionPlan(plan) {
+  const money = value => Number(value || 0).toFixed(2)
+  const formatPart = part => ({ ...part, amount: money(part.amount) })
+  return { ...plan, payoutTotal: money(plan.payoutTotal), businessTotal: money(plan.businessTotal),
+    nextPayoutTotal: money(plan.nextPayoutTotal), futureTotal: money(plan.futureTotal),
+    payoutGroups: plan.payoutGroups.map(group => ({ ...group, amount: money(group.amount),
+      items: group.items.map(item => ({ ...formatPart(item), unitAmount: money(item.unitAmount) })) })),
+    products: plan.products.map(product => ({ ...product, total: money(product.total), schedule: product.schedule.map(formatPart) })),
+    businessSchedule: plan.businessSchedule.map(formatPart), futureMonths: plan.futureMonths.map(formatPart) }
 }
 async function renderSalesData(page, patch, receipts = [], isCurrent = () => true) {
   if (!isCurrent()) return
@@ -47,4 +63,4 @@ async function exportSalesParticipation(data) {
   await require('./export').saveExcelFile(result.base64, result.filename)
   return result
 }
-module.exports = { callSales, currentMonth, renderSalesData, exportSales, exportSalesParticipation }
+module.exports = { callSales, currentMonth, formatCommissionPlan, renderSalesData, exportSales, exportSalesParticipation }

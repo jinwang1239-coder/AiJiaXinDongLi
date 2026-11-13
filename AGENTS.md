@@ -66,7 +66,6 @@
 ├── deploy-functions.js
 ├── deploy.sh
 ├── test.js
-├── test-integration.js
 ├── test-simple-export.js
 ├── test-excel-export.js
 ├── test-function-data.json
@@ -205,10 +204,6 @@ Shell 版部署提示脚本，不实际部署，只打印微信开发者工具�
 
 微信开发者工具控制台测试脚本。定义 `MiniProgramTester`，可测试云函数连接、数据库连接、用户认证、业务数据提交。注意脚本中部分 action 和字段沿用旧版本，如 `register`、`businessData` 入参，直接运行前需要按当前云函数更新。
 
-### `test-integration.js`
-
-本地/小程序混合测试脚本，测试 `product-config`、`storage`、`commission-fixed` 的分类、产品搜索、酬金计算、本地存储。示例产品名可能与当前配置不完全匹配。
-
 ### `test-simple-export.js`
 
 Excel 导出快速测试。调用 `businessData.export`，请求 `format: 'xlsx'`，打印 base64 长度并尝试保存打开。
@@ -302,13 +297,14 @@ action：
 销售月度数据服务。仅读取 sales_month_records 和 sales_active_versions，不再读取旧 business_records。
 - getAccess：云端确认指定导入权限。
 - importPreview / importCommit：12列Excel累计量校验、差异预览、月份区县版本替换；月份锁防并发重复计酬。
-- getImportBatches / reopenMonth：批次历史、定版及填写原因后撤销定版。
+- getActiveVersions / reopenMonth：维护页查询有效版本、填写原因后撤销定版；已移除销售导入批次卡片及列表接口。
 - list / getStats / export：按员工编号及角色范围查询、数量统计、分月核算和Excel导出。
 - archiveLegacy：先上传备份，再清理旧销售逐笔记录；不触及用户、反馈和集客。
 - create、batchImport、update、delete 旧接口已关闭。
 
 sales-core.js 保存模板解析及月度数量计算；SETUP.md 说明新集合、权限、索引和上线步骤。
-sales-summary.js 负责 getSummary、recordReceipt：复用角色范围汇总8类数量和T+1/T+2；区县主管看本区县接收情况，市场营销部与系统管理员看全市。后台已识别的管理人员不计入员工接收人数。
+sales-summary.js 负责 getSummary、recordReceipt：复用角色范围汇总8类数量和T+1/T+2，返回当前范围有效导入版本的统计截止日期，供业务汇总展示实际数据日期（多日期显示区间）；区县主管看本区县接收情况，市场营销部与系统管理员看全市。后台已识别的管理人员不计入员工接收人数。
+普通员工的 getSummary 同时返回 commissionPlan，调用 sales-plan.js 按业务快照计算所选核发月的来源月份/产品/数量/单价/期次、所选业务月T+1至T+5、下月预计核发及未来余额。业务月与核发月独立，查看历史核发月时未来余额不包含之后办理的业务。
 exportParticipation 允许销售工作台的市场营销部及系统管理员调用，与首页共用接收判断，按业务月份导出全市或单个区县的汇总、已接收和未接收人员三张Excel表；保留未认领人员，按当前绑定微信和有效批次判断，导出结束复核版本。participation-test.js 验证导出统计、权限和版本变化。
 
 #### `cloudfunctions/businessData/commission-rules.js`
@@ -497,7 +493,7 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 #### `pages/login/login.js`
 
-登录与工作台路由；销售员工只填写 employeeId 完成一次认领，姓名区县网格取导入资料。薪酬卡保留布局，按业务月份展示总酬金，另列当月应核算及版本状态。授权市场营销部人员看到专属导入入口。集客继续原资料体系。
+登录与工作台路由；销售员工只填写 employeeId 完成一次认领，姓名区县网格取导入资料。个人首页两张卡分别显示所选月预计核发、本月业务预计总酬金；核发组成通过 navigateTo 打开 pages/summary/payout，“查看分月安排”直接通过 globalData.salesSummaryQuery 跳转业务汇总并定位业务分期，首页不再展开明细。授权市场营销部人员看到专属导入入口。集客继续原资料体系。
 资料弹窗支持“管理人员认领”，填写姓名和网格通账号成功后立即切换全市管理首页；原集客账号匹配预录名单时，可在选择销售工作台后先认领。初始名单及自动初始化逻辑在 cloudfunctions/userManagement/sales-managers.js。
 
 #### `pages/login/login.wxml`
@@ -519,11 +515,11 @@ WeUI 风格导航栏样式，包含安全区、高度、返回箭头 mask、load
 
 ### `pages/manage/`
 
-销售月度业务查询页。按月份、区县、业务、姓名或员工编号筛选，数量统计、分月详情和Excel导出。普通员工仅本人，区县主管仅本区县，市场营销部按管理范围查看。禁止逐笔编辑和删除。
+销售月度业务查询页。普通员工仅本人，隐藏区县、业务类型及姓名筛选，保留月份查看与导出；顶部展示本人全部业务月份的累计、已核酬完成、未完成业务量及对应全周期总酬金，另列未完成业务已到期/后续金额。全部非零分期均到计划核发月才算完成，部分到期仍归未完成。list 返回 isEmployee、cumulativeStats，累计不受明细月份、筛选或分页影响，不包含核发基准月之后办理的业务。管理人员保留原筛选统计，区县主管仅本区县，市场营销部按管理范围查看。禁止逐笔编辑和删除。
 
 ### `pages/summary/`
 
-底部“业务汇总”页面。按业务月份展示8类数量、T+1下月预估金额、T+2下下月递延金额；云端限制本人/区县/全市范围。接收情况组件 components/sales-participation 仅在管理首页展示。员工在个人首页、汇总或明细成功查看最新版本后自动记录接收，旧版本或未展示月份不计入。
+底部“业务汇总”页面。管理角色按业务月份展示8类数量及T+1/T+2；普通员工在原页面查看业务分期和未来核发计划，业务月份与计划基准月份独立选择，产品可展开T+1至T+5。核发组成单独位于 pages/summary/payout，通过首页或未来月份进入，按来源月展示业务、数量、期次及本期单价；返回按钮回到进入前的页面，无返回栈时切回登录首页。云端限制本人/区县/全市范围。接收情况组件 components/sales-participation 仅在管理首页展示。员工仅为实际展示的业务月份及核发来源记录接收。
 
 ### `pages/feedback/`
 

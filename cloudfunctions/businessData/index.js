@@ -78,22 +78,27 @@ function filterRecords(records, filters = {}) {
   ))
 }
 async function list(user, data = {}) {
-  const active = await activeRows(user, data.personal === true, data.filters && data.filters.businessMonth)
+  const isEmployee = user.role === 'sales_person'
+  const active = await activeRows(user, data.personal === true, isEmployee ? '' : data.filters && data.filters.businessMonth)
   const referenceMonth = data.referenceMonth || core.monthNow()
   if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(referenceMonth)) throw new Error('核发月份无效')
-  const records = filterRecords(core.flatten(active.rows, active.versions, referenceMonth), data.filters)
+  const allRecords = core.flatten(active.rows, active.versions, referenceMonth)
+  const records = filterRecords(allRecords, data.filters)
     .sort((a, b) => b.businessMonth.localeCompare(a.businessMonth) || a.employeeId.localeCompare(b.employeeId))
   const page = Math.max(1, Number(data.page) || 1), pageSize = Math.min(100, Math.max(1, Number(data.pageSize) || 20))
   const shownRecords = records.slice((page - 1) * pageSize, page * pageSize)
   const filters = data.filters || {}
   const visibleVersions = active.versions.filter(version => active.rows.some(row =>
-    row.importBatchId === version.activeBatchId && row.district === version.district) && (!filters.district || filters.district === version.district))
+    row.importBatchId === version.activeBatchId && row.district === version.district) &&
+    (!filters.businessMonth || version.businessMonth === filters.businessMonth) && (!filters.district || filters.district === version.district))
   const receiptVersions = visibleVersions.filter(version => data.receiptMonth ? version.businessMonth === data.receiptMonth :
     shownRecords.some(row => row.businessMonth === version.businessMonth && row.district === version.district) ||
     page === 1 && !records.length && !filters.businessName && !filters.developer && !filters.employeeId)
   return {
     records: shownRecords, total: records.length,
     stats: core.stats(records, referenceMonth), referenceMonth,
+    isEmployee, cumulativeStats: isEmployee
+      ? core.stats(allRecords.filter(record => record.businessMonth <= referenceMonth), referenceMonth) : null,
     receipts: user.role === 'sales_person' ? receiptVersions
       .map(({ businessMonth, district, activeBatchId }) => ({ businessMonth, district, activeBatchId })) : [],
     versions: visibleVersions
@@ -297,12 +302,9 @@ exports.main = async (event = {}) => {
       case 'importCommit': result = await commit(user, data); break
       case 'reopenMonth': result = await reopen(user, data); break
       case 'clearDistrictMonth': result = await clearDistrictMonth(user, data); break
-      case 'getImportBatches': {
+      case 'getActiveVersions': {
         if (user.role !== 'system_admin') requireImporter(user)
-        const [records, versions] = await Promise.all([
-          all(db.collection(C.batches).where({ state: 'published' })), versionsFor(user)
-        ])
-        result = { records: records.sort((a, b) => new Date(b.createTime) - new Date(a.createTime)).slice(0, 30), versions }
+        result = { versions: await versionsFor(user) }
         break
       }
       case 'list':

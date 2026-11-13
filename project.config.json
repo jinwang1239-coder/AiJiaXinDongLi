@@ -48,10 +48,6 @@
   "packOptions": {
     "ignore": [
       {
-        "value": "test-integration.js",
-        "type": "file"
-      },
-      {
         "value": "reports",
         "type": "folder"
       }

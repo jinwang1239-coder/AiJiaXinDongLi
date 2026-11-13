@@ -40,6 +40,11 @@
     </view>
     <view class="card">
       <view class="card-title">区县数据维护</view>
+      <picker mode="selector" range="{{maintenanceMonths}}" value="{{maintenanceMonthIndex}}" bindchange="onMaintenanceMonthChange" disabled="{{busy}}">
+        <view class="form-picker">查看范围：{{maintenanceMonths[maintenanceMonthIndex]}} ▾</view>
+      </picker>
+      <view class="import-tips" wx:if="{{maintenanceMonthIndex === 0}}">每个区县显示最新月份的数据，可切换查看历史月份。</view>
+      <view class="import-tips" wx:if="{{!activeVersions.length}}">暂无已发布的区县数据。</view>
       <view class="preview-row" wx:for="{{activeVersions}}" wx:key="_id">
         {{item.businessMonth}} {{item.district}} · {{item.finalized ? '已定版' : '更新中'}} · 截至{{item.cutoffDate}}
         <button wx:if="{{canImport && item.finalized}}" size="mini" data-index="{{index}}" bindtap="reopenMonth" disabled="{{busy}}">撤销定版</button>
@@ -47,14 +52,9 @@
       </view>
     </view>
     <view class="card">
-      <view class="card-title">最近导入批次</view>
-      <view class="preview-row" wx:for="{{batches}}" wx:key="_id">
-        {{item.businessMonth}} {{item.districts}} · 截至{{item.cutoffDate}} · {{item.totalEmployees}}人 / {{item.totalQuantity}}笔
-      </view>
-    </view>
-    <view class="card">
       <view class="card-title">认领更正</view>
-      <input class="form-input" value="{{employeeId}}" bindinput="onEmployeeInput" placeholder="需要解除认领的员工编号" />
+      <view class="form-label">员工编号</view>
+      <input class="form-input claim-input" value="{{employeeId}}" bindinput="onEmployeeInput" placeholder="请输入需要解绑的员工编号" />
       <button class="btn btn-secondary" bindtap="releaseClaim" disabled="{{busy}}">解除错误认领</button>
     </view>
   </view>

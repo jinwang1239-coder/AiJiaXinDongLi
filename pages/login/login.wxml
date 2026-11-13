@@ -64,41 +64,20 @@
       <view class="feedback-card" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
       <view class="feedback-card" wx:if="{{managerClaimPending}}" bindtap="openProfileModal">请先完成管理人员认领，点击填写资料。</view>
       <sales-participation wx:if="{{!isEmployee}}" value="{{participation}}" scope-label="{{scopeLabel}}" can-export="{{canExportParticipation}}" exporting="{{exportingParticipation}}" bind:export="onExportParticipation" />
-      <view class="salary-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText}}">
-        <view class="salary-banner">{{monthLabel}} 业务预计总酬金 · {{monthStatus}}</view>
+      <view class="salary-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText && commissionPlan}}">
+        <view class="salary-banner">{{monthLabel}} 预计核发酬金</view>
         <view class="salary-body">
-          <view class="salary-amount">￥{{stats.monthCommission}}</view>
-          <view class="salary-note">该月共完成 {{stats.monthRecords || 0}} 笔业务 · {{cutoffDate ? '截至' + cutoffDate : '暂无数据'}}</view>
+          <view class="salary-amount">￥{{commissionPlan.payoutTotal}}</view>
+          <button class="salary-link" data-section="payout-detail" bindtap="navigateToSummary">查看核发组成 ›</button>
         </view>
       </view>
 
-      <view class="detail-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText}}">
-        <view class="detail-header">业务量与酬金明细</view>
-        <view class="detail-grid">
-          <view class="detail-item">
-            <view class="detail-label">截至{{monthLabel}}计划到期酬金</view>
-            <view class="detail-value">￥{{stats.settledCommission}}</view>
-          </view>
-          <view class="detail-item">
-            <view class="detail-label">{{monthLabel}}预计核发（含历史分期）</view>
-            <view class="detail-value detail-money">￥{{stats.currentDue}}</view>
-          </view>
-          <view class="detail-item">
-            <view class="detail-label">所选月业务量</view>
-            <view class="detail-value">{{stats.monthRecords}} 笔</view>
-          </view>
-          <view class="detail-item">
-            <view class="detail-label">所选月业务总酬金</view>
-            <view class="detail-value detail-money">￥{{stats.monthCommission}}</view>
-          </view>
-          <view class="detail-item">
-            <view class="detail-label">累计业务量</view>
-            <view class="detail-value">{{stats.totalRecords}} 笔</view>
-          </view>
-          <view class="detail-item">
-            <view class="detail-label">累计酬金</view>
-            <view class="detail-value detail-money">￥{{stats.totalCommission}}</view>
-          </view>
+      <view class="salary-card business-salary-card" wx:if="{{isEmployee && !managerClaimPending && !loading && !errorText && commissionPlan}}">
+        <view class="salary-banner">{{monthLabel}} 业务预计总酬金 · {{commissionPlan.businessStatus}}</view>
+        <view class="salary-body">
+          <view class="salary-amount">￥{{commissionPlan.businessTotal}}</view>
+          <view class="salary-note">{{commissionPlan.businessCutoffDate ? '截至' + commissionPlan.businessCutoffDate : '暂无业务数据'}} · 共 {{commissionPlan.businessQuantity}} 笔</view>
+          <button class="salary-link" data-section="business-detail" bindtap="navigateToSummary">查看分月安排 ›</button>
         </view>
       </view>
 

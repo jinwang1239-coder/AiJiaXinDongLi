@@ -1,4 +1,5 @@
 const core = require('./sales-core')
+const buildCommissionPlan = require('./sales-plan')
 const RECEIPTS = 'sales_data_receipts'
 
 module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) => {
@@ -54,9 +55,12 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
 
   async function getSummary(user, data) {
     const { businessMonth, district } = filters(data)
-    const active = await activeRows(user, false, businessMonth)
-    const rows = active.rows.filter(row => !district || row.district === district)
-    const versions = active.versions.filter(version => (!district || version.district === district) &&
+    const personal = user.role === 'sales_person'
+    const payoutMonth = String(data.payoutMonth || businessMonth)
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(payoutMonth)) throw new Error('请选择有效核发月份')
+    const active = await activeRows(user, false, personal ? '' : businessMonth)
+    const rows = active.rows.filter(row => row.businessMonth === businessMonth && (!district || row.district === district))
+    const versions = active.versions.filter(version => version.businessMonth === businessMonth && (!district || version.district === district) &&
       (user.role !== 'sales_person' || rows.some(row => row.importBatchId === version.activeBatchId && row.district === version.district)))
     const products = core.PRODUCT_NAMES.map(businessName => {
       const items = rows.flatMap(row => row.items.filter(item => item.businessName === businessName))
@@ -70,12 +74,15 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
       scopeLabel: user.role === 'sales_person' ? '个人' : user.role === 'district_manager'
         ? user.salesManagedDistrict || '未配置管理区县' : district || '全市',
       canFilterDistrict, districtOptions: canFilterDistrict ? core.DISTRICTS : [],
+      cutoffDates: [...new Set(versions.map(version => version.cutoffDate).filter(Boolean))].sort(),
       hasData: rows.length > 0, products,
       totalQuantity: products.reduce((sum, item) => sum + item.quantity, 0),
       nextAmount: core.money(products.reduce((sum, item) => sum + item.nextAmount, 0)),
       deferredAmount: core.money(products.reduce((sum, item) => sum + item.deferredAmount, 0)),
       receipt: null, participation: null
     }
+    if (personal) result.commissionPlan = buildCommissionPlan(
+      active.rows.filter(row => !district || row.district === district), active.versions, businessMonth, payoutMonth)
     if (user.role === 'sales_person' && versions.length) {
       result.receipt = { businessMonth, district: versions[0].district, activeBatchId: versions[0].activeBatchId }
     }

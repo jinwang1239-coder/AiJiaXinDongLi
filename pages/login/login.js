@@ -1,17 +1,15 @@
 const auth = require('../../utils/auth')
 const workspace = require('../../utils/workspace')
-const { callSales, currentMonth, renderSalesData, exportSalesParticipation } = require('../../utils/sales-service')
-const emptyStats = () => ({ totalRecords: 0, monthRecords: 0, totalCommission: '0.00',
-  monthCommission: '0.00', settledCommission: '0.00', unsettledCommission: '0.00', currentDue: '0.00' })
+const { callSales, currentMonth, formatCommissionPlan, renderSalesData, exportSalesParticipation } = require('../../utils/sales-service')
 
 Page({
   data: {
     userInfo: null, hasUserInfo: false, userRole: '', isEmployee: true, selectedWorkspaceType: 'sales',
     roleText: '', profileCompleted: false, showProfileModal: false, monthLabel: currentMonth(),
     profileDisplayName: '', profileSubtitle: '', loginPrompt: '', canImport: false, canMaintain: false, claimed: false,
-    monthStatus: '', cutoffDate: '', profileForm: { employeeId: '', realName: '', gridAccount: '' }, participation: null, scopeLabel: '',
+    profileForm: { employeeId: '', realName: '', gridAccount: '' }, participation: null, scopeLabel: '',
     claimMode: 'employee', canClaimManager: false, managerClaimPending: false,
-    stats: emptyStats(), loading: false, savingProfile: false, errorText: '', receiptWarning: '',
+    commissionPlan: null, loading: false, savingProfile: false, errorText: '', receiptWarning: '',
     canHandleFeedback: false, pendingCount: 0, feedbackError: '', canExportParticipation: false, exportingParticipation: false
   },
   onLoad() {
@@ -95,11 +93,20 @@ Page({
     } catch (error) { this.error(error) } finally { this.setData({ savingProfile: false }) }
   },
   onMonthChange(e) { this.setData({ monthLabel: e.detail.value }); this.loadDashboard() },
+  navigateToSummary(e) {
+    if (e.currentTarget.dataset.section === 'payout-detail') {
+      wx.navigateTo({ url: '/pages/summary/payout?payoutMonth=' + encodeURIComponent(this.data.monthLabel) })
+      return
+    }
+    getApp().globalData.salesSummaryQuery = { businessMonth: this.data.monthLabel, payoutMonth: this.data.monthLabel,
+      section: e.currentTarget.dataset.section }
+    wx.switchTab({ url: '/pages/summary/summary' })
+  },
   async loadDashboard() {
     const requestId = this.requestId = (this.requestId || 0) + 1
     const current = () => this.visible && this.requestId === requestId
     const month = this.data.monthLabel
-    this.setData({ loading: true, errorText: '', receiptWarning: '', participation: null, stats: emptyStats(),
+    this.setData({ loading: true, errorText: '', receiptWarning: '', participation: null, commissionPlan: null,
       canHandleFeedback: false, pendingCount: 0, feedbackError: '' })
     try {
       const access = await callSales('getAccess')
@@ -108,13 +115,9 @@ Page({
       this.setData({ isEmployee, canImport: access.canImport, canMaintain: access.canMaintain,
         canExportParticipation: access.canExportParticipation === true })
       if (isEmployee) {
-        const result = await callSales('list', { personal: true, referenceMonth: month, receiptMonth: month, pageSize: 1 })
-        const stats = { ...result.stats }
-        for (const key of ['totalCommission', 'monthCommission', 'settledCommission', 'unsettledCommission', 'currentDue']) stats[key] = Number(stats[key] || 0).toFixed(2)
-        const versions = result.versions.filter(item => item.businessMonth === month)
-        await renderSalesData(this, { stats, loading: false,
-          monthStatus: versions.length ? (versions.every(item => item.finalized) ? '已定版' : '更新中') : '暂无数据',
-          cutoffDate: versions.map(item => item.cutoffDate).sort().pop() || '' }, result.receipts || [], current)
+        const result = await callSales('getSummary', { businessMonth: month, payoutMonth: month })
+        await renderSalesData(this, { commissionPlan: formatCommissionPlan(result.commissionPlan), loading: false },
+          result.commissionPlan.receipts, current)
       } else {
         const result = await callSales('getSummary', { businessMonth: month })
         if (current()) this.setData({ participation: result.participation, scopeLabel: result.scopeLabel })
@@ -128,7 +131,7 @@ Page({
         this.setData({ canHandleFeedback: response.result.data.canResolve, pendingCount: response.result.data.records.length })
       }
     } catch (error) {
-      if (current()) this.setData({ errorText: error.message || '加载失败，请刷新重试', monthStatus: '加载失败' })
+      if (current()) this.setData({ errorText: error.message || '加载失败，请刷新重试' })
     } finally { if (current()) this.setData({ loading: false }) }
   },
   navigateToImport() { if (this.data.canImport) wx.navigateTo({ url: '/pages/collect/collect' }) },
@@ -159,7 +162,7 @@ Page({
       this.requestId = (this.requestId || 0) + 1
       auth.logout()
       this.setData({ hasUserInfo: false, userInfo: null, showProfileModal: false, canImport: false,
-        canMaintain: false, canExportParticipation: false, participation: null, canHandleFeedback: false, stats: emptyStats() })
+        canMaintain: false, canExportParticipation: false, participation: null, canHandleFeedback: false, commissionPlan: null })
     } })
   }
 })

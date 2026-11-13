@@ -1,0 +1,23 @@
+<navigation-bar title="核发组成" back="{{true}}" delta="{{0}}" bind:back="onBack" color="black" background="#FFF"></navigation-bar>
+<view class="summary-container">
+  <view class="card filters">
+    <picker mode="date" fields="month" value="{{payoutMonth}}" bindchange="onMonthChange">
+      <view class="filter-field">核发月份：{{payoutMonth}} ▾</view>
+    </picker>
+  </view>
+  <view class="hint" wx:if="{{loading}}">加载中…</view>
+  <view class="card error" wx:if="{{error}}">{{error}}<button size="mini" bindtap="loadData">重新加载</button></view>
+  <view class="card overview" wx:if="{{detail}}">
+    <view class="card-title">{{payoutMonth}}预计核发酬金</view>
+    <view class="plan-total">￥{{detail.payoutTotal}}</view>
+    <view class="source-group" wx:for="{{detail.payoutGroups}}" wx:for-item="group" wx:key="businessMonth">
+      <view class="source-heading"><text>{{group.businessMonth}}业务</text><text>￥{{group.amount}}</text></view>
+      <view class="source-item" wx:for="{{group.items}}" wx:key="key">
+        <view class="source-heading"><text>{{item.businessName}} · {{item.period}}</text><text class="item-money">￥{{item.amount}}</text></view>
+        <view class="hint">{{item.quantity}}笔 × 本期单价￥{{item.unitAmount}}</view>
+      </view>
+    </view>
+    <view class="hint" wx:if="{{!detail.payoutGroups.length}}">该核发月份暂无计划核发金额。</view>
+  </view>
+  <view class="card error" wx:if="{{receiptWarning}}">{{receiptWarning}}</view>
+</view>

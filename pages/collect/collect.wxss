@@ -5,6 +5,7 @@
 .import-tips { color: #68758a; font-size: 26rpx; line-height: 1.7; margin: 18rpx 0; }
 .form-group { margin: 24rpx 0; }
 .form-picker { padding: 20rpx; background: #f3f6fa; border-radius: 12rpx; margin-top: 12rpx; }
+.form-input.claim-input { height: 88rpx; padding: 0 24rpx; line-height: normal; }
 .preview-row { font-size: 26rpx; padding: 18rpx 0; border-bottom: 1rpx solid #edf0f5; }
 .error-item { color: #bf3030; padding: 12rpx 0; }
 button { margin-top: 20rpx; }

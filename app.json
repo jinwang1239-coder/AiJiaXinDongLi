@@ -4,6 +4,7 @@
     "pages/collect/collect",
     "pages/manage/manage",
     "pages/summary/summary",
+    "pages/summary/payout",
     "pages/line-project/index",
     "pages/line-project/import",
     "pages/line-project/salary-import",

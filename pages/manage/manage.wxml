@@ -2,6 +2,27 @@
 <scroll-view class="page-container" scroll-y bindscrolltolower="onReachBottom">
   <view class="manage-container">
     <view class="card" wx:if="{{!loading && !error}}">
+      <block wx:if="{{isEmployee && cumulativeStats}}">
+        <view class="card-title">个人累计业务与核酬</view>
+        <view class="progress-row">
+          <view>累计业务量<view class="stats-number">{{cumulativeStats.totalRecords}}笔</view></view>
+          <view class="progress-money">对应总酬金<view class="stats-number">￥{{cumulativeStats.totalCommission}}</view></view>
+        </view>
+        <view class="progress-row">
+          <view>已核酬完成业务量<view class="stats-number">{{cumulativeStats.completedRecords}}笔</view></view>
+          <view class="progress-money">对应总酬金<view class="stats-number">￥{{cumulativeStats.completedCommission}}</view></view>
+        </view>
+        <view class="progress-row">
+          <view>未核酬完成业务量<view class="stats-number">{{cumulativeStats.pendingRecords}}笔</view></view>
+          <view class="progress-money">对应总酬金<view class="stats-number">￥{{cumulativeStats.pendingCommission}}</view></view>
+        </view>
+        <view class="pending-breakdown" wx:if="{{cumulativeStats.pendingRecords > 0}}">
+          <view>未完成业务中，已到期分期金额：￥{{cumulativeStats.pendingSettledCommission}}</view>
+          <view>后续预计核发：￥{{cumulativeStats.pendingUnsettledCommission}}</view>
+        </view>
+        <view class="hint">统计本人全部业务月份，计划进度截至{{referenceMonth}}。全部非零分期均到期才计为完成，部分到期仍计未完成；不代表实际工资到账。</view>
+      </block>
+      <block wx:else>
       <view class="card-title">业务量与酬金</view>
       <view class="stats-grid">
         <view>筛选业务量<view class="stats-number">{{stats.totalRecords || 0}}笔</view></view>
@@ -10,14 +31,15 @@
         <view>后续预计核发<view>￥{{stats.unsettledCommission || '0.00'}}</view></view>
       </view>
       <view class="hint">按办理数量统计，计划进度截至{{referenceMonth}}，不代表实际工资到账。</view>
+      </block>
     </view>
     <view class="card">
-      <picker mode="date" fields="month" bindchange="onMonthChange"><view class="filter-field">{{filters.businessMonth || '选择业务月份'}}</view></picker>
-      <picker range="{{districts}}" bindchange="onDistrictChange"><view class="filter-field">{{filters.district || '选择区县'}}</view></picker>
-      <picker range="{{businessTypes}}" bindchange="onBusinessChange"><view class="filter-field">{{filters.businessName || '选择业务类型'}}</view></picker>
-      <input class="form-input" placeholder="姓名或员工编号" value="{{filters.developer}}" bindinput="onSearchInput" bindconfirm="search" />
+      <picker mode="date" fields="month" value="{{filters.businessMonth}}" bindchange="onMonthChange"><view class="filter-field">{{isEmployee ? '明细业务月份：' : ''}}{{filters.businessMonth || '全部月份'}}</view></picker>
+      <picker wx:if="{{!isEmployee}}" range="{{districts}}" bindchange="onDistrictChange"><view class="filter-field">{{filters.district || '选择区县'}}</view></picker>
+      <picker wx:if="{{!isEmployee}}" range="{{businessTypes}}" bindchange="onBusinessChange"><view class="filter-field">{{filters.businessName || '选择业务类型'}}</view></picker>
+      <input wx:if="{{!isEmployee}}" class="form-input" placeholder="姓名或员工编号" value="{{filters.developer}}" bindinput="onSearchInput" bindconfirm="search" />
       <view class="actions">
-        <button size="mini" bindtap="search">查询</button><button size="mini" bindtap="resetFilter">重置</button><button size="mini" bindtap="showAllMonths">全部月份</button><button size="mini" bindtap="exportData" disabled="{{loading || !appliedFilters}}">导出Excel</button>
+        <button wx:if="{{!isEmployee}}" size="mini" bindtap="search">查询</button><button size="mini" bindtap="resetFilter">重置</button><button size="mini" bindtap="showAllMonths">全部月份</button><button size="mini" bindtap="exportData" disabled="{{loading || !appliedFilters}}">导出Excel</button>
       </view>
     </view>
     <view class="card record" wx:for="{{records}}" wx:key="_id" bindtap="openDetail" data-index="{{index}}">
@@ -25,6 +47,7 @@
       <view>{{item.developer}} / {{item.employeeId}}</view>
       <view>{{item.businessMonth}} · {{item.district}} · {{item.statusText}}</view>
       <view class="amount">￥{{item.commission}}</view>
+      <view wx:if="{{isEmployee}}">核酬{{item.commissionCompleted ? '已完成' : '未完成'}}</view>
       <view class="hint">统计截至{{item.cutoffDate}}，点击查看分月金额</view>
     </view>
     <view class="hint" wx:if="{{error}}">{{error}}</view>

@@ -1,11 +1,22 @@
 const auth = require('../../utils/auth')
 const { callSales, currentMonth } = require('../../utils/sales-service')
 
+function getMaintenanceVersions(versions, month = '') {
+  const districts = new Map()
+  versions.forEach(version => {
+    if (month && version.businessMonth !== month) return
+    const current = districts.get(version.district)
+    if (!current || version.businessMonth > current.businessMonth) districts.set(version.district, version)
+  })
+  return Array.from(districts.values())
+}
+
 Page({
   data: {
     canImport: false, canMaintain: false, maintenanceOnly: false, busy: false, importAction: '', businessMonth: currentMonth(),
     cutoffDate: '',
-    finalized: false, file: null, fileID: '', preview: null, batches: [], activeVersions: [], employeeId: ''
+    maintenanceMonths: ['最新数据'], maintenanceMonthIndex: 0,
+    finalized: false, file: null, fileID: '', preview: null, activeVersions: [], employeeId: ''
   },
   onLoad(options = {}) { this.setData({ maintenanceOnly: options.mode === 'maintenance' }) },
   async onShow() {
@@ -15,7 +26,7 @@ Page({
       const now = new Date()
       this.setData({ canImport: access.canImport, canMaintain: access.canMaintain, cutoffDate: this.data.cutoffDate ||
         currentMonth() + '-' + String(now.getDate()).padStart(2, '0') })
-      if (access.canImport || access.canMaintain) await this.loadBatches()
+      if (access.canImport || access.canMaintain) await this.loadActiveVersions()
     } catch (error) { this.setData({ canImport: false }); this.showError(error) }
   },
   showError(error) { wx.showModal({ title: '操作提示', content: error.message || '操作失败', showCancel: false }) },
@@ -27,6 +38,11 @@ Page({
     this.setData({ businessMonth: month, cutoffDate: month + '-' + String(day).padStart(2, '0'), preview: null, finalized: false })
   },
   onCutoffChange(e) { this.setData({ cutoffDate: e.detail.value, preview: null }) },
+  onMaintenanceMonthChange(e) {
+    const index = Number(e.detail.value)
+    this.setData({ maintenanceMonthIndex: index,
+      activeVersions: getMaintenanceVersions(this.activeVersionRecords || [], index ? this.data.maintenanceMonths[index] : '') })
+  },
   onFinalizedChange(e) { this.setData({ finalized: e.detail.value, preview: null }) },
   onEmployeeInput(e) { this.setData({ employeeId: e.detail.value }) },
   chooseFile() {
@@ -83,15 +99,20 @@ Page({
       this.setData({ preview: null })
       this.showError(error)
       if (error.code === 'SALES_FUNCTION_TIMEOUT') {
-        try { await this.loadBatches() } catch (refreshError) { console.error('发布超时后读取批次失败:', refreshError) }
+        try { await this.loadActiveVersions() } catch (refreshError) { console.error('发布超时后读取区县数据状态失败:', refreshError) }
       }
       return
     } finally { this.setData({ busy: false, importAction: '' }) }
-    try { await this.loadBatches() } catch (error) { this.showError(new Error('发布已完成，但批次列表刷新失败，请重新进入页面查看。')) }
+    try { await this.loadActiveVersions() } catch (error) { this.showError(new Error('发布已完成，但区县数据状态刷新失败，请重新进入页面查看。')) }
   },
-  async loadBatches() {
-    const result = await callSales('getImportBatches')
-    this.setData({ batches: result.records, activeVersions: result.versions })
+  async loadActiveVersions() {
+    const result = await callSales('getActiveVersions')
+    const selectedMonth = this.data.maintenanceMonthIndex ? this.data.maintenanceMonths[this.data.maintenanceMonthIndex] : ''
+    const maintenanceMonths = ['最新数据', ...new Set(result.versions.map(version => version.businessMonth).sort().reverse())]
+    const maintenanceMonthIndex = Math.max(0, maintenanceMonths.indexOf(selectedMonth))
+    this.activeVersionRecords = result.versions
+    this.setData({ maintenanceMonths, maintenanceMonthIndex,
+      activeVersions: getMaintenanceVersions(result.versions, maintenanceMonthIndex ? maintenanceMonths[maintenanceMonthIndex] : '') })
   },
   async reopenMonth(e) {
     if (this.data.busy) return
@@ -105,7 +126,7 @@ Page({
     try {
       await callSales('reopenMonth', { ...version, reason: decision.content })
       this.setData({ preview: null })
-      await this.loadBatches()
+      await this.loadActiveVersions()
     } catch (error) { this.showError(error) } finally { this.setData({ busy: false }) }
   },
   async releaseClaim() {
@@ -136,7 +157,7 @@ Page({
     this.setData({ busy: true })
     try {
       await callSales('clearDistrictMonth', { ...version, reason: decision.content })
-      await this.loadBatches()
+      await this.loadActiveVersions()
       wx.showToast({ title: '已更正', icon: 'success' })
     } catch (error) { this.showError(error) } finally { this.setData({ busy: false }) }
   }
