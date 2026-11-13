@@ -19,6 +19,9 @@ const callSales = async (action, data = {}) => {
   if (action === 'getSummary' && (!result || !Array.isArray(result.products) || !Array.isArray(result.districtOptions))) {
     throw new Error('业务汇总返回格式异常，请重新部署 businessData 云函数。')
   }
+  if (action === 'getSummary' && result.participation && result.participation.method !== 'employee_batch') {
+    throw new Error('参与率统计口径未更新，请重新部署 businessData 云函数。')
+  }
   if (action === 'getSummary' && result.scopeLabel === '个人' &&
       (!result.commissionPlan || !Array.isArray(result.commissionPlan.payoutGroups) ||
       !Array.isArray(result.commissionPlan.businessSchedule) || !Array.isArray(result.commissionPlan.products) ||

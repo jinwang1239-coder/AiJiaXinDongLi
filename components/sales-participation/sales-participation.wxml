@@ -7,13 +7,16 @@
     <view class="export-scope">导出范围：{{exportScopes[exportScopeIndex]}} ▾</view>
   </picker>
   <view class="stats-grid">
-    <view>应接收<view class="number">{{value.expected}}人</view></view>
-    <view>已接收<view class="number">{{value.received}}人</view></view>
-    <view>未接收<view class="number">{{value.pending}}人</view></view>
+    <view>应接收次数<view class="number">{{value.expected}}次</view></view>
+    <view>已接收次数<view class="number">{{value.received}}次</view></view>
+    <view>未接收次数<view class="number">{{value.pending}}次</view></view>
     <view>参与率<view class="number">{{value.rate}}</view></view>
   </view>
+  <view class="counts">覆盖{{value.employeeCount}}名员工 · 涉及{{value.batchCount}}批导入</view>
+  <view class="counts">参与率＝已接收次数÷应接收次数，同一员工同一批次只计一次。</view>
   <view class="district" wx:for="{{value.districts}}" wx:key="district">
     <view class="header"><text>{{item.district}}</text><text class="rate">{{item.rate}}</text></view>
-    <view class="counts">应接收 {{item.expected}}人 · 已接收 {{item.received}}人 · 未接收 {{item.pending}}人</view>
+    <view class="counts">应接收 {{item.expected}}次 · 已接收 {{item.received}}次 · 未接收 {{item.pending}}次</view>
+    <view class="counts">覆盖{{item.employeeCount}}名员工 · 涉及{{item.batchCount}}批导入</view>
   </view>
 </view>

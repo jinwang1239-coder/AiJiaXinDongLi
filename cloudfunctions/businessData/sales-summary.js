@@ -15,13 +15,21 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
     return { businessMonth, district }
   }
 
-  async function participation(rows, versions, businessMonth, district) {
+  async function participation(businessMonth, district) {
+    const batches = (await all(db.collection('sales_import_batches').where({ businessMonth, state: 'published' })))
+      .filter(batch => batch.operation !== 'clear_district' && (!district || !Array.isArray(batch.districts) || batch.districts.includes(district)))
+    const batchMap = new Map(batches.map(batch => [batch._id, batch]))
+    const batchIds = Array.from(batchMap.keys())
+    const rows = []
     const receipts = []
-    const batchIds = [...new Set(versions.map(version => version.activeBatchId))]
     for (let offset = 0; offset < batchIds.length; offset += 20) {
-      receipts.push(...await all(db.collection(RECEIPTS).where({
-        businessMonth, activeBatchId: db.command.in(batchIds.slice(offset, offset + 20))
-      })))
+      const ids = db.command.in(batchIds.slice(offset, offset + 20))
+      const [batchRows, batchReceipts] = await Promise.all([
+        all(db.collection('sales_month_records').where({ importBatchId: ids, ...(district ? { district } : {}) })),
+        all(db.collection(RECEIPTS).where({ businessMonth, activeBatchId: ids, ...(district ? { district } : {}) }))
+      ])
+      rows.push(...batchRows)
+      receipts.push(...batchReceipts)
     }
     // 换绑后，旧微信的查看不能代表新绑定人员已查看。
     const bindings = new Map(rows.length
@@ -29,28 +37,55 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
     const managers = await all(db.collection('users').where({ role: db.command.in(['district_manager', 'sales_department', 'system_admin']) }))
     const managementIds = new Set(managers.filter(user => user.employeeId &&
       (!bindings.has(user.employeeId) || bindings.get(user.employeeId) === user.openid)).map(user => user.employeeId))
-    const people = []
+    const key = (batchId, name, employeeId) => [batchId, name, employeeId].join('|')
+    const receiptMap = new Map()
+    receipts.forEach(receipt => {
+      if (!bindings.get(receipt.employeeId) || bindings.get(receipt.employeeId) !== receipt.userOpenid) return
+      const id = key(receipt.activeBatchId, receipt.district, receipt.employeeId)
+      const previous = receiptMap.get(id)
+      if (!previous || new Date(receipt.viewedAt) < new Date(previous.viewedAt)) receiptMap.set(id, receipt)
+    })
+    const opportunities = new Map(), employees = new Map()
+    rows.forEach(row => {
+      if (row.businessMonth !== businessMonth || !core.DISTRICTS.includes(row.district) || !row.employeeId || managementIds.has(row.employeeId)) return
+      const batch = batchMap.get(row.importBatchId)
+      if (!batch) return
+      const id = key(row.importBatchId, row.district, row.employeeId)
+      if (opportunities.has(id)) return
+      const receipt = receiptMap.get(id)
+      const opportunity = { businessMonth, district: row.district, gridName: row.gridName, realName: row.realName,
+        employeeId: row.employeeId, activeBatchId: row.importBatchId, cutoffDate: batch.cutoffDate || '',
+        publishTime: batch.publishTime || batch.createTime, received: !!receipt,
+        viewedAt: receipt ? receipt.viewedAt : null, claimed: !!bindings.get(row.employeeId) }
+      opportunities.set(id, opportunity)
+      const employeeKey = row.district + '|' + row.employeeId
+      const person = employees.get(employeeKey) || { businessMonth, district: row.district, employeeId: row.employeeId,
+        claimed: opportunity.claimed, expected: 0, received: 0, latestTime: -Infinity }
+      const time = new Date(opportunity.publishTime || 0).getTime()
+      if (time >= person.latestTime) {
+        person.realName = row.realName; person.gridName = row.gridName; person.latestTime = time
+      }
+      person.expected++
+      if (receipt) person.received++
+      employees.set(employeeKey, person)
+    })
+    const people = Array.from(employees.values(), person => ({ ...person,
+      pending: person.expected - person.received, rate: percentage(person.received, person.expected) }))
+    const details = Array.from(opportunities.values())
     const districts = (district ? [district] : core.DISTRICTS).map(name => {
-      const version = versions.find(item => item.district === name)
-      const employees = new Map(rows.filter(row => row.district === name && !managementIds.has(row.employeeId))
-        .map(row => [row.employeeId, row]))
-      const received = new Map(receipts.filter(receipt => version && receipt.district === name &&
-        receipt.activeBatchId === version.activeBatchId && employees.has(receipt.employeeId) &&
-        bindings.get(receipt.employeeId) && bindings.get(receipt.employeeId) === receipt.userOpenid)
-        .map(receipt => [receipt.employeeId, receipt]))
-      employees.forEach(row => people.push({
-        businessMonth, district: name, gridName: row.gridName, realName: row.realName, employeeId: row.employeeId,
-        received: received.has(row.employeeId), claimed: !!bindings.get(row.employeeId),
-        viewedAt: received.has(row.employeeId) ? received.get(row.employeeId).viewedAt : null,
-        cutoffDate: version ? version.cutoffDate : '', activeBatchId: version ? version.activeBatchId : '',
-        finalized: !!(version && version.finalized)
-      }))
-      return { district: name, expected: employees.size, received: received.size,
-        pending: employees.size - received.size, rate: percentage(received.size, employees.size) }
+      const members = people.filter(person => person.district === name)
+      const expected = members.reduce((total, person) => total + person.expected, 0)
+      const received = members.reduce((total, person) => total + person.received, 0)
+      return { district: name, employeeCount: members.length,
+        batchCount: new Set(details.filter(item => item.district === name).map(item => item.activeBatchId)).size,
+        expected, received, pending: expected - received, rate: percentage(received, expected) }
     })
     const expected = districts.reduce((sum, item) => sum + item.expected, 0)
     const received = districts.reduce((sum, item) => sum + item.received, 0)
-    return { people, summary: { districts, expected, received, pending: expected - received, rate: percentage(received, expected) } }
+    return { people, details, batches, summary: { method: 'employee_batch', districts,
+      employeeCount: new Set(people.map(person => person.employeeId)).size,
+      batchCount: new Set(details.map(item => item.activeBatchId)).size,
+      expected, received, pending: expected - received, rate: percentage(received, expected) } }
   }
 
   async function getSummary(user, data) {
@@ -86,7 +121,7 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
     if (user.role === 'sales_person' && versions.length) {
       result.receipt = { businessMonth, district: versions[0].district, activeBatchId: versions[0].activeBatchId }
     }
-    if (user.role !== 'sales_person') result.participation = (await participation(rows, versions, businessMonth,
+    if (user.role !== 'sales_person') result.participation = (await participation(businessMonth,
       user.role === 'district_manager' ? user.salesManagedDistrict : district)).summary
     return result
   }
@@ -94,55 +129,54 @@ module.exports = (db, { all, optionalDoc, activeRows, versionsFor, versionId }) 
   async function exportParticipation(user, data) {
     if (!canExportParticipation(user)) throw new Error('仅市场营销部和系统管理员可导出员工数据接收明细')
     const { businessMonth, district } = filters(data)
-    const active = await activeRows(user, false, businessMonth)
-    const versions = active.versions.filter(item => !district || item.district === district)
-    const { people, summary } = await participation(active.rows.filter(row => !district || row.district === district),
-      versions, businessMonth, district)
+    const versions = (await versionsFor(user, businessMonth)).filter(item => !district || item.district === district)
+    const { people, details, batches, summary } = await participation(businessMonth, district)
     const timeText = value => {
       if (!value) return ''
       const time = new Date(value).getTime()
       return Number.isFinite(time) ? new Date(time + 8 * 3600000).toISOString().slice(0, 19).replace('T', ' ') : ''
     }
     const exportTime = timeText(new Date())
-    const versionColumns = item => ({
-      '统计截止日期': item ? item.cutoffDate || '' : '', '有效批次': item ? item.activeBatchId : '',
-      '版本状态': item ? (item.finalized ? '已定版' : '更新中') : '暂无有效数据'
-    })
     const totals = [...summary.districts, { district: '合计', ...summary }].map(item => ({
-      '业务月份': businessMonth, '区县': item.district, '应接收人数': item.expected, '已接收人数': item.received,
-      '未接收人数': item.pending, '参与率': item.rate,
-      ...versionColumns(versions.find(version => version.district === item.district))
+      '业务月份': businessMonth, '区县': item.district, '覆盖员工人数': item.employeeCount, '涉及导入批次数': item.batchCount,
+      '应接收次数': item.expected, '已接收次数': item.received, '未接收次数': item.pending, '参与率': item.rate
     }))
-    // 合计行没有独立版本。
-    totals[totals.length - 1]['版本状态'] = ''
+    const personColumns = person => ({ '业务月份': businessMonth, '区县': person.district,
+      '网格名称': person.gridName || '', '姓名': person.realName || '', '员工编号': String(person.employeeId) })
+    const comparePeople = (a, b) => core.DISTRICTS.indexOf(a.district) - core.DISTRICTS.indexOf(b.district) ||
+      String(a.gridName || '').localeCompare(String(b.gridName || ''), 'zh-CN') || a.employeeId.localeCompare(b.employeeId)
+    const employees = people.sort(comparePeople).map(person => ({ ...personColumns(person),
+      '应接收批次数': person.expected, '已接收批次数': person.received, '未接收批次数': person.pending, '个人参与率': person.rate,
+      '接收状态': person.pending === 0 ? '全部接收' : person.received ? '部分接收' : '未接收',
+      '认领状态': person.claimed ? '已认领' : '未认领' }))
     const received = [], pending = []
-    people.sort((a, b) => core.DISTRICTS.indexOf(a.district) - core.DISTRICTS.indexOf(b.district) ||
-      String(a.gridName || '').localeCompare(String(b.gridName || ''), 'zh-CN') || a.employeeId.localeCompare(b.employeeId))
-      .forEach(person => {
-        const row = { '业务月份': businessMonth, '区县': person.district, '网格名称': person.gridName || '',
-          '姓名': person.realName || '', '员工编号': String(person.employeeId), '接收状态': person.received ? '已接收' : '未接收' }
-        if (person.received) received.push({ ...row, '首次接收时间': timeText(person.viewedAt), ...versionColumns(person) })
-        else pending.push({ ...row, '认领状态': person.claimed ? '已认领但未查看当前版本' : '未认领', ...versionColumns(person) })
+    details.sort((a, b) => comparePeople(a, b) || String(a.cutoffDate).localeCompare(String(b.cutoffDate)) || a.activeBatchId.localeCompare(b.activeBatchId))
+      .forEach(item => {
+        const row = { ...personColumns(item), '导入批次': item.activeBatchId, '统计截止日期': item.cutoffDate,
+          '发布时间': timeText(item.publishTime) }
+        if (item.received) received.push({ ...row, '首次接收时间': timeText(item.viewedAt) })
+        else pending.push({ ...row, '认领状态': item.claimed ? '已认领但未接收本批次' : '未认领' })
       })
     const XLSX = require('xlsx'), workbook = XLSX.utils.book_new()
-    const versionHeaders = ['统计截止日期', '有效批次', '版本状态']
-    const personHeaders = ['业务月份', '区县', '网格名称', '姓名', '员工编号', '接收状态']
+    const personHeaders = ['业务月份', '区县', '网格名称', '姓名', '员工编号']
+    const batchHeaders = ['导入批次', '统计截止日期', '发布时间']
     const append = (name, rows, headers) => {
-      const note = !versions.length ? '该月份该范围暂无有效数据' : !people.length ? '该范围暂无应接收员工数据'
-        : !rows.length ? '该范围暂无' + name : '仅统计当前有效版本，按当前绑定账号判断接收。'
+      const note = !batches.length ? '该月份该范围暂无正式发布的导入数据' : !people.length ? '该范围暂无应接收员工数据'
+        : !rows.length ? '该范围暂无' + name : '按本月实际覆盖员工的已发布批次统计，同一员工同一批次只计一次。'
       const sheet = XLSX.utils.aoa_to_sheet([
         ['员工数据接收情况 · ' + name], ['业务月份', businessMonth, '导出范围', district || '全市'],
         ['导出时间（北京时间）', exportTime, '说明', note], [], headers
       ])
       XLSX.utils.sheet_add_json(sheet, rows, { header: headers, skipHeader: true, origin: 'A6' })
-      sheet['!cols'] = headers.map(header => ({ wch: header === '有效批次' ? 28 : header === '首次接收时间' || header === '认领状态' ? 26 : 20 }))
+      sheet['!cols'] = headers.map(header => ({ wch: header === '导入批次' ? 34 : header === '首次接收时间' || header === '认领状态' ? 26 : 20 }))
       sheet['!merges'] = [XLSX.utils.decode_range('A1:' + XLSX.utils.encode_col(headers.length - 1) + '1')]
       sheet['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 4, c: 0 }, e: { r: 4 + rows.length, c: headers.length - 1 } }) }
       XLSX.utils.book_append_sheet(workbook, sheet, name)
     }
-    append('区县汇总', totals, ['业务月份', '区县', '应接收人数', '已接收人数', '未接收人数', '参与率', ...versionHeaders])
-    append('已接收人员', received, [...personHeaders, '首次接收时间', ...versionHeaders])
-    append('未接收人员', pending, [...personHeaders, '认领状态', ...versionHeaders])
+    append('区县汇总', totals, ['业务月份', '区县', '覆盖员工人数', '涉及导入批次数', '应接收次数', '已接收次数', '未接收次数', '参与率'])
+    append('员工参与率', employees, [...personHeaders, '应接收批次数', '已接收批次数', '未接收批次数', '个人参与率', '接收状态', '认领状态'])
+    append('已接收明细', received, [...personHeaders, ...batchHeaders, '首次接收时间'])
+    append('未接收明细', pending, [...personHeaders, ...batchHeaders, '认领状态'])
     const base64 = XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' })
     const snapshot = items => JSON.stringify(items.map(item => [item.district, item.activeBatchId, item.revision || 0,
       item.cutoffDate || '', !!item.finalized]).sort((a, b) => a[0].localeCompare(b[0])))
